@@ -1,0 +1,65 @@
+@import url("https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,400;9..144,600;9..144,700&family=Inter:wght@400;500;600;700&display=swap");
+
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+html,
+body,
+#root {
+  width: 100%;
+  max-width: 100%;
+  min-width: 0;
+  margin: 0;
+}
+
+html {
+  overflow-x: clip;
+}
+
+body {
+  @apply bg-ivory text-navy font-body antialiased;
+  overflow-x: clip;
+}
+
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+}
+
+html,
+body {
+  overscroll-behavior-y: none;
+}
+
+/* Punch-hole notch on ticket-style cards */
+.ticket-notch::before,
+.ticket-notch::after {
+  content: "";
+  position: absolute;
+  width: 20px;
+  height: 20px;
+  background: #fbf8f2;
+  border-radius: 9999px;
+  top: 50%;
+  transform: translateY(-50%);
+}
+
+.ticket-notch::before {
+  left: -10px;
+}
+
+.ticket-notch::after {
+  right: -10px;
+}
+
+/* Hide scrollbar while preserving horizontal scrolling */
+.scrollbar-hide {
+  -ms-overflow-style: none;
+  scrollbar-width: none;
+}
+
+.scrollbar-hide::-webkit-scrollbar {
+  display: none;
+}

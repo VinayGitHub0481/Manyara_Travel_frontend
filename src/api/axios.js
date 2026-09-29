@@ -1,0 +1,18 @@
+import axios from "axios";
+
+// Point this to your FastAPI backend (uvicorn default: http://localhost:8000)
+const BASE_URL = "http://localhost:8000"; 
+
+const api = axios.create({
+  baseURL: BASE_URL,
+  headers: { "Content-Type": "application/json" },
+});
+
+// attach admin/creator token automatically if logged in
+api.interceptors.request.use((config) => {
+  const token = localStorage.getItem("access_token");
+  if (token) config.headers.Authorization = `Bearer ${token}`;
+  return config;
+});
+
+export default api;
