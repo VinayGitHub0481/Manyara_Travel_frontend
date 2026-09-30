@@ -483,17 +483,92 @@ function PackageCard({ packageItem }) {
 
    Every package collection gets its own carousel.
 ========================================================= */
-
 function CollectionRow({
   collection,
   packages,
 }) {
   const carouselRef = useRef(null);
 
+  const [canScrollLeft, setCanScrollLeft] = useState(false);
+  const [canScrollRight, setCanScrollRight] = useState(false);
+
   const collectionPackages = getCollectionPackages(
     collection,
     packages
   );
+
+  /* =========================================================
+     UPDATE CHEVRON STATE
+
+     - Hide left arrow at the beginning
+     - Hide right arrow at the end
+     - Hide both when all cards fit
+  ========================================================= */
+
+  const updateScrollState = () => {
+    const container = carouselRef.current;
+
+    if (!container) {
+      return;
+    }
+
+    const maxScroll =
+      container.scrollWidth - container.clientWidth;
+
+    const currentScroll = container.scrollLeft;
+
+    const threshold = 4;
+
+    setCanScrollLeft(currentScroll > threshold);
+
+    setCanScrollRight(
+      currentScroll < maxScroll - threshold
+    );
+  };
+
+  /* =========================================================
+     INITIAL + RESIZE STATE
+
+     Important for:
+     - Mobile
+     - Tablet
+     - Desktop
+     - Browser resize
+     - Orientation changes
+  ========================================================= */
+
+  useEffect(() => {
+    if (collectionPackages.length === 0) {
+      return;
+    }
+
+    const frame = requestAnimationFrame(() => {
+      updateScrollState();
+    });
+
+    window.addEventListener(
+      "resize",
+      updateScrollState
+    );
+
+    return () => {
+      cancelAnimationFrame(frame);
+
+      window.removeEventListener(
+        "resize",
+        updateScrollState
+      );
+    };
+  }, [collectionPackages.length]);
+
+  /* =========================================================
+     SCROLL CAROUSEL
+
+     Move by one complete visible page:
+     Mobile  = 1 card
+     Tablet  = 2 cards
+     Desktop = 4 cards
+  ========================================================= */
 
   const scrollCarousel = (direction) => {
     const container = carouselRef.current;
@@ -510,27 +585,20 @@ function CollectionRow({
       return;
     }
 
-    const cardWidth = card.getBoundingClientRect().width;
+    const cardWidth =
+      card.getBoundingClientRect().width;
 
     const computedStyle =
       window.getComputedStyle(container);
 
-    const gap = parseFloat(
-      computedStyle.columnGap ||
-        computedStyle.gap ||
-        "0"
-    );
+    const gap =
+      parseFloat(
+        computedStyle.columnGap ||
+          computedStyle.gap ||
+          "0"
+      );
 
     const containerWidth = container.clientWidth;
-
-    /*
-      Mobile  = 1 card
-      Tablet  = 2 cards
-      Desktop = 4 cards
-
-      Calculate the number dynamically so the scroll
-      always moves by one complete visible "page".
-    */
 
     const cardsPerView = Math.max(
       1,
@@ -555,6 +623,9 @@ function CollectionRow({
   if (collectionPackages.length === 0) {
     return null;
   }
+
+  const showCarousel =
+    canScrollLeft || canScrollRight;
 
   return (
     <div className="mt-10 first:mt-0 sm:mt-12">
@@ -644,55 +715,65 @@ function CollectionRow({
       ================================================= */}
 
       <div className="relative w-full">
-        {/* LEFT CHEVRON */}
 
-        <button
-          type="button"
-          onClick={() => scrollCarousel("left")}
-          aria-label={`Previous ${collection.label} packages`}
-          className="
-            absolute
-            left-0
-            top-1/2
-            z-30
-            flex
-            h-10
-            w-10
-            -translate-x-1/2
-            -translate-y-1/2
-            items-center
-            justify-center
-            rounded-full
-            border
-            border-slate-200
-            bg-white
-            text-[#061b45]
-            shadow-lg
-            transition-all
-            duration-500
-            ease-out
-            hover:scale-105
-            hover:bg-[#061b45]
-            hover:text-white
-            focus:outline-none
-            focus:ring-2
-            focus:ring-[#ff5a2a]
-            focus:ring-offset-2
-            sm:h-11
-            sm:w-11
-          "
-        >
-          <ChevronLeft
-            className="h-5 w-5 sm:h-6 sm:w-6"
-            strokeWidth={2.5}
-            aria-hidden="true"
-          />
-        </button>
+        {/* =================================================
+            LEFT CHEVRON
 
-        {/* PACKAGE ROW */}
+            Completely hidden when there is no previous
+            card to scroll to.
+        ================================================= */}
+
+        {showCarousel && canScrollLeft && (
+          <button
+            type="button"
+            onClick={() => scrollCarousel("left")}
+            aria-label={`Previous ${collection.label} packages`}
+            className="
+              absolute
+              left-0
+              top-1/2
+              z-30
+              flex
+              h-10
+              w-10
+              -translate-x-1/2
+              -translate-y-1/2
+              items-center
+              justify-center
+              rounded-full
+              border
+              border-slate-200
+              bg-white
+              text-[#061b45]
+              shadow-lg
+              transition-all
+              duration-300
+              hover:scale-105
+              hover:bg-[#061b45]
+              hover:text-white
+              focus:outline-none
+              focus:ring-2
+              focus:ring-[#ff5a2a]
+              focus:ring-offset-2
+              sm:h-11
+              sm:w-11
+            "
+          >
+            <ChevronLeft
+              className="h-5 w-5 sm:h-6 sm:w-6"
+              strokeWidth={2.5}
+              aria-hidden="true"
+            />
+          </button>
+        )}
+
+        {/* =================================================
+            PACKAGE ROW
+        ================================================= */}
 
         <div
           ref={carouselRef}
+          onScroll={updateScrollState}
           className="
             flex
             w-full
@@ -734,53 +815,61 @@ function CollectionRow({
           ))}
         </div>
 
-        {/* RIGHT CHEVRON */}
+        {/* =================================================
+            RIGHT CHEVRON
 
-        <button
-          type="button"
-          onClick={() => scrollCarousel("right")}
-          aria-label={`Next ${collection.label} packages`}
-          className="
-            absolute
-            right-0
-            top-1/2
-            z-30
-            flex
-            h-10
-            w-10
-            translate-x-1/2
-            -translate-y-1/2
-            items-center
-            justify-center
-            rounded-full
-            border
-            border-slate-200
-            bg-white
-            text-[#061b45]
-            shadow-lg
-            transition-all
-            duration-500
-            ease-out
-            hover:scale-105
-            hover:bg-[#061b45]
-            hover:text-white
-            focus:outline-none
-            focus:ring-2
-            focus:ring-[#ff5a2a]
-            focus:ring-offset-2
-            sm:h-11
-            sm:w-11
-          "
-        >
-          <ChevronRight
-            className="h-5 w-5 sm:h-6 sm:w-6"
-            strokeWidth={2.5}
-            aria-hidden="true"
-          />
-        </button>
+            Completely hidden when there is no next
+            card to scroll to.
+        ================================================= */}
+
+        {showCarousel && canScrollRight && (
+          <button
+            type="button"
+            onClick={() => scrollCarousel("right")}
+            aria-label={`Next ${collection.label} packages`}
+            className="
+              absolute
+              right-0
+              top-1/2
+              z-30
+              flex
+              h-10
+              w-10
+              translate-x-1/2
+              -translate-y-1/2
+              items-center
+              justify-center
+              rounded-full
+              border
+              border-slate-200
+              bg-white
+              text-[#061b45]
+              shadow-lg
+              transition-all
+              duration-300
+              hover:scale-105
+              hover:bg-[#061b45]
+              hover:text-white
+              focus:outline-none
+              focus:ring-2
+              focus:ring-[#ff5a2a]
+              focus:ring-offset-2
+              sm:h-11
+              sm:w-11
+            "
+          >
+            <ChevronRight
+              className="h-5 w-5 sm:h-6 sm:w-6"
+              strokeWidth={2.5}
+              aria-hidden="true"
+            />
+          </button>
+        )}
       </div>
 
-      {/* MOBILE VIEW ALL */}
+      {/* =================================================
+          MOBILE VIEW ALL
+      ================================================= */}
 
       <div className="mt-3 flex justify-end sm:hidden">
         <Link
