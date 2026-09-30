@@ -217,7 +217,7 @@ const SocialLink = ({ name, url, fallbackName, fallbackUrl }) => {
                 "
               >
                 <img
-                  src="/images/logo.webp"
+                  src="/images/logo_1.webp"
                   alt="On a Trip Holidays"
                   className="
                     h-auto
@@ -371,7 +371,7 @@ const SocialLink = ({ name, url, fallbackName, fallbackUrl }) => {
               "
             >
               <img
-                src="/images/logo.webp"
+                src="/images/logo_1.webp"
                 alt="On a Trip Holidays"
                 className="
                   h-auto

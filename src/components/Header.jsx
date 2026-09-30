@@ -267,7 +267,7 @@ export default function Header({ onPlanTrip }) {
           aria-label="On a Trip Holidays Home"
         >
           <img
-            src="/images/logo.webp"
+            src="/images/logo_1.webp"
             alt="On a Trip Holidays"
             className="
               block

@@ -3833,12 +3833,6 @@ return (
 
      overflow-hidden
 
-     bg-[url('/images/view.png')]
-
-     bg-cover
-
-     bg-center
-
      px-4
 
      py-8
@@ -3854,6 +3848,23 @@ return (
  "
 
 >
+      <img
+    src="/images/view1.webp"
+    alt=""
+    fetchPriority="high"
+    loading="eager"
+    decoding="async"
+    width="1920"
+    height="1080"
+    className="
+      absolute
+      inset-0
+      h-full
+      w-full
+      object-cover
+      object-center
+    "
+  />
 
  {/* Background overlays */}
 

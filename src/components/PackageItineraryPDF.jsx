@@ -1,6 +1,7 @@
 
 
-import html2pdf from "html2pdf.js";
+//import html2pdf from "html2pdf.js";
+
 
 /**
  * PackageItineraryPDF.jsx
@@ -32,6 +33,9 @@ export const generatePackagePDF = async (pkg) => {
   if (!pkg) {
     throw new Error("Package information is required to generate the PDF.");
   }
+
+  const {default: html2pdf} = await import("html2pdf.js");
+  
 
   // ---------------------------------------------------------
   // Normalize package data

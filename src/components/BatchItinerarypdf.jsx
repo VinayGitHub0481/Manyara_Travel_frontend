@@ -1,6 +1,6 @@
 
 
-import html2pdf from "html2pdf.js";
+//import html2pdf from "html2pdf.js";
 
 /**
  * BatchItineraryPDF.jsx
@@ -33,6 +33,8 @@ export const generateBatchPDF = async (input) => {
   if (!input) {
     throw new Error("Batch information is required to generate the PDF.");
   }
+
+  const {default : html2pdf } = await import("html2pdf.js");
 
   const actualBatch = input?.batch || input;
   const packageData = input?.packageData || input?.package || {};
