@@ -1,14 +1,22 @@
 
 
 
-
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import {
   Trash2,
   RefreshCw,
   Loader2,
   X,
   Package as PackageIcon,
+  MapPin,
+  Phone,
+  Users,
+  CalendarDays,
+  Moon,
+  MessageSquareText,
+  UserRound,
+  Hash,
+  Compass,
 } from "lucide-react";
 
 import {
@@ -16,10 +24,10 @@ import {
   deleteEnquiry,
 } from "../../api/enquiries";
 
-
 // ============================================================
 // PACKAGE TYPE LABELS
 // ============================================================
+
 const PACKAGE_TYPE_LABELS = {
   pilgrimage: "Pilgrimage",
   mountains_adventure: "Mountains & Adventure",
@@ -31,17 +39,62 @@ const PACKAGE_TYPE_LABELS = {
 };
 
 const getPackageTypeLabel = (value) => {
-  if (!value) {
-    return "-";
-  }
+  if (!value) return "-";
 
   return (
     PACKAGE_TYPE_LABELS[value] ||
     String(value)
       .replace(/_/g, " ")
-      .replace(/\\b\\w/g, (letter) => letter.toUpperCase())
+      .replace(/\b\w/g, (letter) => letter.toUpperCase())
   );
 };
+
+// ============================================================
+// SMALL UI HELPERS
+// ============================================================
+
+const DetailItem = ({
+  icon: Icon,
+  label,
+  value,
+  className = "",
+}) => (
+  <div className={`min-w-0 ${className}`}>
+    <div className="flex items-center gap-2">
+      {Icon && (
+        <Icon
+          size={14}
+          strokeWidth={1.8}
+          className="text-primary"
+        />
+      )}
+
+      <p className="text-[11px] font-semibold uppercase tracking-[0.12em] text-muted">
+        {label}
+      </p>
+    </div>
+
+    <p className="mt-1.5 text-sm font-medium leading-5 text-text-dark break-words">
+      {value ?? "-"}
+    </p>
+  </div>
+);
+
+const StatPill = ({ label, value }) => (
+  <div className="rounded-xl border border-divider bg-surface-soft px-3 py-2.5">
+    <p className="text-[10px] font-semibold uppercase tracking-[0.12em] text-muted">
+      {label}
+    </p>
+
+    <p className="mt-0.5 text-sm font-semibold text-text-dark">
+      {value ?? "-"}
+    </p>
+  </div>
+);
+
+// ============================================================
+// MAIN COMPONENT
+// ============================================================
 
 export default function EnquiriesManage() {
   const [enquiries, setEnquiries] = useState([]);
@@ -49,6 +102,10 @@ export default function EnquiriesManage() {
   const [error, setError] = useState("");
   const [deletingId, setDeletingId] = useState(null);
   const [selectedEnquiry, setSelectedEnquiry] = useState(null);
+
+  // ==========================================================
+  // FETCH
+  // ==========================================================
 
   const fetchEnquiries = async () => {
     try {
@@ -76,6 +133,10 @@ export default function EnquiriesManage() {
   useEffect(() => {
     fetchEnquiries();
   }, []);
+
+  // ==========================================================
+  // DELETE
+  // ==========================================================
 
   const handleDelete = async (id) => {
     const confirmed = window.confirm(
@@ -111,23 +172,40 @@ export default function EnquiriesManage() {
     }
   };
 
-  const formatDate = (date) => {
-    if (!date) return "-";
+  // ==========================================================
+  // FORMATTING
+  // ==========================================================
 
-    const parsedDate = new Date(date);
+const formatDate = (date) => {
+  if (!date) return "-";
 
-    if (Number.isNaN(parsedDate.getTime())) {
-      return "-";
-    }
+  const raw = String(date).trim();
 
-    return parsedDate.toLocaleString("en-IN", {
-      day: "2-digit",
-      month: "short",
-      year: "numeric",
-      hour: "2-digit",
-      minute: "2-digit",
-    });
-  };
+  // Normalize MySQL datetime:
+  // "2026-10-06 07:30:00" -> "2026-10-06T07:30:00Z"
+  // If API already sends timezone/Z, preserve it.
+  let normalized = raw.replace(" ", "T");
+
+  if (!/[zZ]$|[+-]\d{2}:\d{2}$/.test(normalized)) {
+    normalized += "Z";
+  }
+
+  const parsedDate = new Date(normalized);
+
+  if (Number.isNaN(parsedDate.getTime())) {
+    return "-";
+  }
+
+  return parsedDate.toLocaleString("en-IN", {
+    timeZone: "Asia/Kolkata",
+    day: "2-digit",
+    month: "short",
+    year: "numeric",
+    hour: "2-digit",
+    minute: "2-digit",
+    hour12: true,
+  });
+};
 
   const formatTravelDate = (date) => {
     if (!date) return "-";
@@ -145,390 +223,564 @@ export default function EnquiriesManage() {
     });
   };
 
-  return (
-    <div className="w-full min-w-0 overflow-x-hidden p-3 sm:p-4 md:p-6 lg:p-8">
-      {/* Header */}
-      <div className="flex flex-col gap-4 mb-6 sm:flex-row sm:items-center sm:justify-between">
-        <div className="min-w-0">
-          <h1 className="text-2xl sm:text-3xl font-bold text-navy">
-            Enquiries
-          </h1>
+  const totalEnquiries = enquiries.length;
 
-          <p className="mt-1 text-sm sm:text-base text-gray-500">
-            View customer enquiries submitted through the website.
-          </p>
+  const packageEnquiries = useMemo(
+    () =>
+      enquiries.filter(
+        (enquiry) => enquiry.package_id != null
+      ).length,
+    [enquiries]
+  );
+
+  const generalEnquiries = totalEnquiries - packageEnquiries;
+
+  // ==========================================================
+  // RENDER
+  // ==========================================================
+
+  return (
+    <div className="w-full min-w-0 overflow-x-hidden bg-background p-3 sm:p-4 md:p-6 lg:p-8">
+      {/* ======================================================
+          HEADER
+      ====================================================== */}
+
+      <div className="mb-6 overflow-hidden rounded-2xl border border-divider bg-card shadow-travel-card">
+        <div className="relative px-4 py-5 sm:px-6 sm:py-6 lg:px-7">
+          <div className="pointer-events-none absolute -right-16 -top-20 h-44 w-44 rounded-full bg-rose-100/60 blur-3xl" />
+
+          <div className="relative flex flex-col gap-5 sm:flex-row sm:items-center sm:justify-between">
+            <div className="min-w-0">
+              <div className="mb-2 flex items-center gap-2">
+                <span className="h-1.5 w-8 rounded-full bg-accent" />
+
+                <span className="text-[11px] font-semibold uppercase tracking-[0.18em] text-primary">
+                  Manyara Privé Vacations
+                </span>
+              </div>
+
+              <h1 className="font-display text-3xl font-semibold leading-tight text-text-dark sm:text-4xl">
+                Customer Enquiries
+              </h1>
+
+              <p className="mt-1.5 max-w-2xl text-sm leading-6 text-muted sm:text-base">
+                Manage travel enquiries submitted through your
+                website and review customer requirements.
+              </p>
+            </div>
+
+            <button
+              type="button"
+              onClick={fetchEnquiries}
+              disabled={loading}
+              className="inline-flex w-full items-center justify-center gap-2 rounded-xl bg-primary px-4 py-2.5 text-sm font-semibold text-white shadow-brand transition-all duration-200 hover:bg-primary-dark hover:-translate-y-0.5 disabled:cursor-not-allowed disabled:opacity-60 sm:w-auto"
+            >
+              {loading ? (
+                <Loader2 size={17} className="animate-spin" />
+              ) : (
+                <RefreshCw size={17} />
+              )}
+
+              Refresh
+            </button>
+          </div>
         </div>
 
-        <button
-          type="button"
-          onClick={fetchEnquiries}
-          disabled={loading}
-          className="w-full sm:w-auto inline-flex items-center justify-center gap-2 px-4 py-2.5 rounded-lg bg-navy text-white hover:opacity-90 transition disabled:opacity-60"
-        >
-          {loading ? (
-            <Loader2 size={18} className="animate-spin" />
-          ) : (
-            <RefreshCw size={18} />
-          )}
+        {/* ====================================================
+            SUMMARY
+        ==================================================== */}
 
-          Refresh
-        </button>
+        <div className="grid grid-cols-1 border-t border-divider sm:grid-cols-3">
+          <div className="border-b border-divider px-5 py-4 sm:border-b-0 sm:border-r">
+            <p className="text-[11px] font-semibold uppercase tracking-[0.14em] text-muted">
+              Total Enquiries
+            </p>
+
+            <p className="mt-1 text-2xl font-semibold text-text-dark">
+              {totalEnquiries}
+            </p>
+          </div>
+
+          <div className="border-b border-divider px-5 py-4 sm:border-b-0 sm:border-r">
+            <p className="text-[11px] font-semibold uppercase tracking-[0.14em] text-muted">
+              Package Enquiries
+            </p>
+
+            <p className="mt-1 text-2xl font-semibold text-primary">
+              {packageEnquiries}
+            </p>
+          </div>
+
+          <div className="px-5 py-4">
+            <p className="text-[11px] font-semibold uppercase tracking-[0.14em] text-muted">
+              General Enquiries
+            </p>
+
+            <p className="mt-1 text-2xl font-semibold text-text-dark">
+              {generalEnquiries}
+            </p>
+          </div>
+        </div>
       </div>
 
-      {/* Error */}
+      {/* ======================================================
+          ERROR
+      ====================================================== */}
+
       {error && (
-        <div className="mb-5 rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700 break-words">
-          {error}
+        <div className="mb-5 flex items-start gap-3 rounded-xl border border-error/20 bg-error-bg px-4 py-3 text-sm text-error-text">
+          <div className="mt-0.5 h-2 w-2 shrink-0 rounded-full bg-error" />
+
+          <p className="break-words">{error}</p>
         </div>
       )}
 
-      {/* Loading */}
+      {/* ======================================================
+          LOADING
+      ====================================================== */}
+
       {loading ? (
-        <div className="flex flex-col items-center justify-center py-16 text-gray-500">
-          <Loader2 size={32} className="animate-spin mb-3" />
-          <p>Loading enquiries...</p>
+        <div className="rounded-2xl border border-divider bg-card py-20 text-center shadow-travel-card">
+          <div className="mx-auto flex h-12 w-12 items-center justify-center rounded-full bg-surface-soft">
+            <Loader2
+              size={24}
+              className="animate-spin text-primary"
+            />
+          </div>
+
+          <p className="mt-4 text-sm font-medium text-muted">
+            Loading enquiries...
+          </p>
         </div>
       ) : enquiries.length === 0 ? (
-        /* Empty State */
-        <div className="rounded-xl border border-gray-200 bg-white p-8 sm:p-12 text-center">
-          <h2 className="text-lg sm:text-xl font-semibold text-navy">
+        /* ====================================================
+           EMPTY
+           ==================================================== */
+
+        <div className="rounded-2xl border border-divider bg-card px-6 py-16 text-center shadow-travel-card">
+          <div className="mx-auto flex h-16 w-16 items-center justify-center rounded-2xl bg-surface-soft">
+            <MessageSquareText
+              size={28}
+              className="text-primary"
+            />
+          </div>
+
+          <h2 className="mt-5 font-display text-2xl font-semibold text-text-dark">
             No enquiries yet
           </h2>
 
-          <p className="mt-2 text-sm sm:text-base text-gray-500">
-            Customer enquiries will appear here once they are submitted.
+          <p className="mx-auto mt-2 max-w-md text-sm leading-6 text-muted">
+            Customer enquiries will appear here once visitors
+            submit their travel requirements through the website.
           </p>
         </div>
       ) : (
         <>
-          {/* Desktop / Tablet Table */}
-          <div className="hidden md:block w-full overflow-x-auto rounded-xl border border-gray-200 bg-white">
-            <table className="w-full min-w-[1050px]">
-              <thead className="bg-gray-50 border-b border-gray-200">
-                <tr>
-                  <th className="px-4 py-3 text-left text-sm font-semibold text-navy">
-                    Customer
-                  </th>
+          {/* ==================================================
+              DESKTOP / TABLET
+              ================================================== */}
 
-                  <th className="px-4 py-3 text-left text-sm font-semibold text-navy">
-                    Package
-                  </th>
+          <div className="hidden overflow-hidden rounded-2xl border border-divider bg-card shadow-travel-card md:block">
+            <div className="overflow-x-auto">
+              <table className="w-full min-w-[1180px]">
+                <thead className="border-b border-divider bg-surface">
+                  <tr>
+                    <th className="px-4 py-3.5 text-left text-[11px] font-semibold uppercase tracking-[0.1em] text-muted">
+                      Customer
+                    </th>
 
-                  <th className="px-4 py-3 text-left text-sm font-semibold text-navy">
-                    Package Type
-                  </th>
+                    <th className="px-4 py-3.5 text-left text-[11px] font-semibold uppercase tracking-[0.1em] text-muted">
+                      Package
+                    </th>
 
-                  <th className="px-4 py-3 text-left text-sm font-semibold text-navy">
-                    Contact
-                  </th>
+                    <th className="px-4 py-3.5 text-left text-[11px] font-semibold uppercase tracking-[0.1em] text-muted">
+                      Type
+                    </th>
 
-                  <th className="px-4 py-3 text-left text-sm font-semibold text-navy">
-                    Travellers
-                  </th>
+                    <th className="px-4 py-3.5 text-left text-[11px] font-semibold uppercase tracking-[0.1em] text-muted">
+                      Destination
+                    </th>
 
-                  <th className="px-4 py-3 text-left text-sm font-semibold text-navy">
-                    Travel Date
-                  </th>
+                    <th className="px-4 py-3.5 text-left text-[11px] font-semibold uppercase tracking-[0.1em] text-muted">
+                      Contact
+                    </th>
 
-                  <th className="px-4 py-3 text-left text-sm font-semibold text-navy">
-                    Batch
-                  </th>
+                    <th className="px-4 py-3.5 text-left text-[11px] font-semibold uppercase tracking-[0.1em] text-muted">
+                      Travellers
+                    </th>
 
-                  <th className="px-4 py-3 text-left text-sm font-semibold text-navy">
-                    Submitted
-                  </th>
+                    <th className="px-4 py-3.5 text-left text-[11px] font-semibold uppercase tracking-[0.1em] text-muted">
+                      Travel Date
+                    </th>
 
-                  <th className="px-4 py-3 text-right text-sm font-semibold text-navy">
-                    Action
-                  </th>
-                </tr>
-              </thead>
+                    <th className="px-4 py-3.5 text-left text-[11px] font-semibold uppercase tracking-[0.1em] text-muted">
+                      Submitted
+                    </th>
 
-              <tbody>
-                {enquiries.map((enquiry) => (
-                  <tr
-                    key={enquiry.id}
-                    className="border-b border-gray-100 last:border-0 hover:bg-gray-50 transition"
-                  >
-                    {/* Customer */}
-                    <td className="px-4 py-4">
-                      <p className="font-semibold text-gray-900">
-                        {enquiry.name}
-                      </p>
-
-
-                    </td>
-
-                    {/* Package */}
-            <td className="px-4 py-4">
-              {enquiry.package_id ? (
-                <div className="flex items-center gap-2">
-                  <PackageIcon
-                    size={16}
-                    className="text-navy shrink-0"
-                  />
-
-                  <div>
-                    <p className="text-sm font-semibold text-gray-800">
-                      {enquiry.package_title || "Package"}
-                    </p>
-
-                    <p className="text-xs text-gray-500 mt-1">
-                      Package #{enquiry.package_id}
-                    </p>
-
-                    {enquiry.batch_id != null && (
-                      <p className="text-xs text-gray-500">
-                        Batch #{enquiry.batch_id}
-                      </p>
-                    )}
-                  </div>
-                </div>
-              ) : (
-                <span className="text-sm text-gray-400">
-                  No package
-                </span>
-              )}
-            </td>
-
-                    {/* Package Type */}
-                    <td className="px-4 py-4">
-                      <span className="inline-flex rounded-full bg-[#061B45]/5 px-2.5 py-1 text-xs font-medium text-navy">
-                        {getPackageTypeLabel(enquiry.package_type)}
-                      </span>
-                    </td>
-
-                    {/* Contact */}
-                    <td className="px-4 py-4 text-sm text-gray-700">
-                      {enquiry.phone}
-                    </td>
-
-                    {/* Travellers */}
-                    <td className="px-4 py-4 text-sm text-gray-700">
-                      {enquiry.travellers}
-                    </td>
-
-                    {/* Travel Date */}
-                    <td className="px-4 py-4 text-sm text-gray-700">
-                      {formatTravelDate(enquiry.travel_date)}
-                    </td>
-
-                    {/* Batch */}
-                    <td className="px-4 py-4 text-sm text-gray-700">
-                      {enquiry.batch_id != null
-                        ? `Batch #${enquiry.batch_id}`
-                        : "-"}
-                    </td>
-
-                    {/* Submitted */}
-                    <td className="px-4 py-4 text-sm text-gray-500">
-                      {formatDate(enquiry.created_at)}
-                    </td>
-
-                    {/* Actions */}
-                    <td className="px-4 py-4">
-                      <div className="flex justify-end gap-2">
-                        <button
-                          type="button"
-                          onClick={() =>
-                            setSelectedEnquiry(enquiry)
-                          }
-                          className="px-3 py-2 rounded-lg bg-gray-100 text-navy text-sm font-medium hover:bg-gray-200 transition"
-                        >
-                          View
-                        </button>
-
-                        <button
-                          type="button"
-                          onClick={() =>
-                            handleDelete(enquiry.id)
-                          }
-                          disabled={deletingId === enquiry.id}
-                          className="inline-flex items-center justify-center gap-2 px-3 py-2 rounded-lg bg-red-50 text-red-600 hover:bg-red-100 transition disabled:opacity-60"
-                        >
-                          {deletingId === enquiry.id ? (
-                            <Loader2
-                              size={16}
-                              className="animate-spin"
-                            />
-                          ) : (
-                            <Trash2 size={16} />
-                          )}
-
-                          Delete
-                        </button>
-                      </div>
-                    </td>
+                    <th className="px-4 py-3.5 text-right text-[11px] font-semibold uppercase tracking-[0.1em] text-muted">
+                      Action
+                    </th>
                   </tr>
-                ))}
-              </tbody>
-            </table>
+                </thead>
+
+                <tbody>
+                  {enquiries.map((enquiry) => (
+                    <tr
+                      key={enquiry.id}
+                      className="border-b border-divider last:border-0 hover:bg-surface-soft/60 transition-colors"
+                    >
+                      {/* CUSTOMER */}
+
+                      <td className="px-4 py-4">
+                        <div className="flex items-center gap-3">
+                          <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-surface-soft text-primary">
+                            <UserRound size={16} />
+                          </div>
+
+                          <div className="min-w-0">
+                            <p className="truncate font-semibold text-text-dark">
+                              {enquiry.name}
+                            </p>
+
+                            <p className="mt-0.5 text-xs text-muted">
+                              Enquiry #{enquiry.id}
+                            </p>
+                          </div>
+                        </div>
+                      </td>
+
+                      {/* PACKAGE */}
+
+                      <td className="px-4 py-4">
+                        <div className="flex items-center gap-2">
+                          <PackageIcon
+                            size={16}
+                            className="shrink-0 text-primary"
+                          />
+
+                          <div className="min-w-0">
+                            <p className="max-w-[190px] truncate text-sm font-semibold text-text-dark">
+                              {enquiry.package_title ||
+                                (enquiry.package_id
+                                  ? "Package"
+                                  : "General Enquiry")}
+                            </p>
+
+                            {enquiry.package_id != null && (
+                              <p className="mt-0.5 text-xs text-muted">
+                                Package #{enquiry.package_id}
+                              </p>
+                            )}
+                          </div>
+                        </div>
+                      </td>
+
+                      {/* PACKAGE TYPE */}
+
+                      <td className="px-4 py-4">
+                        <span className="inline-flex rounded-full border border-primary/15 bg-surface-soft px-2.5 py-1 text-xs font-semibold text-primary">
+                          {getPackageTypeLabel(
+                            enquiry.package_type
+                          )}
+                        </span>
+                      </td>
+
+                      {/* DESTINATION */}
+
+                      <td className="px-4 py-4">
+                        <div className="flex max-w-[150px] items-center gap-1.5 text-sm text-text">
+                          <MapPin
+                            size={14}
+                            className="shrink-0 text-accent"
+                          />
+
+                          <span className="truncate">
+                            {enquiry.destination || "-"}
+                          </span>
+                        </div>
+                      </td>
+
+                      {/* CONTACT */}
+
+                      <td className="px-4 py-4">
+                        <div className="flex items-center gap-1.5 text-sm text-text">
+                          <Phone
+                            size={14}
+                            className="shrink-0 text-primary"
+                          />
+
+                          <span>{enquiry.phone}</span>
+                        </div>
+                      </td>
+
+                      {/* TRAVELLERS */}
+
+                      <td className="px-4 py-4">
+                        <div className="flex flex-wrap gap-1.5">
+                          <span className="rounded-lg bg-surface-strong px-2 py-1 text-xs font-medium text-text-dark">
+                            {enquiry.adults ?? 0} Adults
+                          </span>
+
+                          <span className="rounded-lg bg-surface-strong px-2 py-1 text-xs font-medium text-text-dark">
+                            {enquiry.kids ?? 0} Kids
+                          </span>
+                        </div>
+                      </td>
+
+                      {/* TRAVEL DATE */}
+
+                      <td className="px-4 py-4">
+                        <div className="flex items-center gap-1.5 whitespace-nowrap text-sm text-text">
+                          <CalendarDays
+                            size={14}
+                            className="text-primary"
+                          />
+
+                          {formatTravelDate(
+                            enquiry.travel_date
+                          )}
+                        </div>
+                      </td>
+
+                      {/* SUBMITTED */}
+
+                      <td className="px-4 py-4 text-sm text-muted">
+                        {formatDate(enquiry.created_at)}
+                      </td>
+
+                      {/* ACTION */}
+
+                      <td className="px-4 py-4">
+                        <div className="flex justify-end gap-2">
+                          <button
+                            type="button"
+                            onClick={() =>
+                              setSelectedEnquiry(enquiry)
+                            }
+                            className="rounded-lg border border-primary/15 bg-surface-soft px-3 py-2 text-sm font-semibold text-primary transition hover:border-primary/30 hover:bg-rose-100"
+                          >
+                            View
+                          </button>
+
+                          <button
+                            type="button"
+                            onClick={() =>
+                              handleDelete(enquiry.id)
+                            }
+                            disabled={
+                              deletingId === enquiry.id
+                            }
+                            className="inline-flex items-center justify-center gap-1.5 rounded-lg border border-error/15 bg-error-bg px-3 py-2 text-sm font-semibold text-error-text transition hover:bg-error/10 disabled:opacity-60"
+                          >
+                            {deletingId === enquiry.id ? (
+                              <Loader2
+                                size={15}
+                                className="animate-spin"
+                              />
+                            ) : (
+                              <Trash2 size={15} />
+                            )}
+
+                            Delete
+                          </button>
+                        </div>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
           </div>
 
-          {/* Mobile Cards */}
+          {/* ==================================================
+              MOBILE CARDS
+              ================================================== */}
+
           <div className="grid grid-cols-1 gap-4 md:hidden">
             {enquiries.map((enquiry) => (
               <div
                 key={enquiry.id}
-                className="min-w-0 rounded-xl border border-gray-200 bg-white p-4 shadow-sm"
+                className="overflow-hidden rounded-2xl border border-divider bg-card shadow-travel-card"
               >
-                {/* Customer */}
-                <div className="flex items-start justify-between gap-3">
-                  <div className="min-w-0">
-                    <h2 className="font-semibold text-lg text-navy break-words">
-                      {enquiry.name}
-                    </h2>
+                {/* CARD HEADER */}
 
+                <div className="border-b border-divider bg-surface-soft px-4 py-4">
+                  <div className="flex items-start justify-between gap-3">
+                    <div className="flex min-w-0 items-center gap-3">
+                      <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-card text-primary shadow-sm">
+                        <UserRound size={18} />
+                      </div>
 
+                      <div className="min-w-0">
+                        <h2 className="truncate text-base font-semibold text-text-dark">
+                          {enquiry.name}
+                        </h2>
+
+                        <p className="mt-0.5 text-xs text-muted">
+                          Enquiry #{enquiry.id}
+                        </p>
+                      </div>
+                    </div>
+
+                    <span className="shrink-0 rounded-full border border-primary/15 bg-card px-2.5 py-1 text-[10px] font-semibold uppercase tracking-wide text-primary">
+                      Enquiry
+                    </span>
                   </div>
-
-                  <span className="shrink-0 rounded-full bg-gray-100 px-2.5 py-1 text-xs font-medium text-gray-600">
-                    #{enquiry.id}
-                  </span>
                 </div>
 
-                {/* Package / Package Type / Batch */}
-                <div className="mt-4 rounded-lg bg-gray-50 p-3 space-y-3">
-                  <div className="flex items-start gap-2">
-                    <PackageIcon
-                      size={17}
-                      className="text-navy shrink-0 mt-0.5"
-                    />
+                {/* PACKAGE */}
 
-                    <div className="min-w-0">
-                      <p className="text-xs font-semibold text-gray-500">
-                        Package
-                      </p>
+                <div className="p-4">
+                  <div className="rounded-xl border border-divider bg-surface p-3.5">
+                    <div className="flex items-start gap-3">
+                      <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-surface-soft text-primary">
+                        <PackageIcon size={17} />
+                      </div>
 
-                      <p className="text-sm font-medium text-gray-800">
-                        {enquiry.package_title || "No Package"}
-                      </p>
-
-                      {enquiry.package_id && (
-                        <p className="text-xs text-gray-500 mt-1">
-                          Package #{enquiry.package_id}
+                      <div className="min-w-0">
+                        <p className="text-[10px] font-semibold uppercase tracking-[0.12em] text-muted">
+                          Package
                         </p>
-                      )}
 
-                      {enquiry.batch_id != null && (
-                        <p className="text-xs text-gray-500">
-                          Batch #{enquiry.batch_id}
+                        <p className="mt-1 text-sm font-semibold text-text-dark">
+                          {enquiry.package_title ||
+                            (enquiry.package_id
+                              ? "Package"
+                              : "General Enquiry")}
                         </p>
+
+                        {enquiry.package_id != null && (
+                          <p className="mt-0.5 text-xs text-muted">
+                            Package #{enquiry.package_id}
+                          </p>
+                        )}
+                      </div>
+                    </div>
+
+                    <div className="mt-3 flex flex-wrap gap-2">
+                      <span className="inline-flex items-center gap-1.5 rounded-full border border-primary/15 bg-card px-2.5 py-1 text-xs font-semibold text-primary">
+                        <Compass size={12} />
+                        {getPackageTypeLabel(
+                          enquiry.package_type
+                        )}
+                      </span>
+
+                      {enquiry.seasoned_id != null && (
+                        <span className="inline-flex items-center gap-1.5 rounded-full border border-divider bg-card px-2.5 py-1 text-xs font-medium text-muted">
+                          <Hash size={12} />
+                          Season #{enquiry.seasoned_id}
+                        </span>
                       )}
                     </div>
                   </div>
 
-                  <div>
-                    <p className="text-xs font-semibold text-gray-500">
-                      Package Type
-                    </p>
-                    <p className="text-sm font-medium text-gray-800">
-                      {getPackageTypeLabel(enquiry.package_type)}
-                    </p>
-                  </div>
-                </div>
+                  {/* DETAILS */}
 
-                {/* Details */}
-                <div className="mt-4 space-y-2 text-sm">
-                  <div className="flex justify-between gap-3">
-                    <span className="text-gray-500">
-                      Phone
-                    </span>
+                  <div className="mt-4 grid grid-cols-2 gap-3">
+                    <DetailItem
+                      icon={MapPin}
+                      label="Destination"
+                      value={enquiry.destination || "-"}
+                    />
 
-                    <span className="text-gray-800 break-all text-right">
-                      {enquiry.phone}
-                    </span>
-                  </div>
+                    <DetailItem
+                      icon={Phone}
+                      label="Phone"
+                      value={enquiry.phone}
+                    />
 
-                  <div className="flex justify-between gap-3">
-                    <span className="text-gray-500">
-                      Travellers
-                    </span>
+                    <DetailItem
+                      icon={Users}
+                      label="Adults"
+                      value={enquiry.adults ?? 0}
+                    />
 
-                    <span className="text-gray-800">
-                      {enquiry.travellers}
-                    </span>
-                  </div>
+                    <DetailItem
+                      icon={Users}
+                      label="Kids"
+                      value={enquiry.kids ?? 0}
+                    />
 
-                  <div className="flex justify-between gap-3">
-                    <span className="text-gray-500">
-                      Travel Date
-                    </span>
+                    <DetailItem
+                      icon={Moon}
+                      label="Nights"
+                      value={enquiry.nights ?? "-"}
+                    />
 
-                    <span className="text-gray-800">
-                      {formatTravelDate(
+                    <DetailItem
+                      icon={CalendarDays}
+                      label="Travel Date"
+                      value={formatTravelDate(
                         enquiry.travel_date
                       )}
-                    </span>
+                    />
                   </div>
 
-                  <div className="flex justify-between gap-3">
-                    <span className="text-gray-500">
-                      Batch
-                    </span>
+                  {/* SUBMITTED */}
 
-                    <span className="text-gray-800">
-                      {enquiry.batch_id != null
-                        ? `#${enquiry.batch_id}`
-                        : "-"}
-                    </span>
+                  <div className="mt-4 border-t border-divider pt-4">
+                    <DetailItem
+                      label="Submitted"
+                      value={formatDate(enquiry.created_at)}
+                    />
                   </div>
 
-                  <div className="flex flex-col gap-1">
-                    <span className="text-gray-500">
-                      Submitted
-                    </span>
+                  {/* MESSAGE */}
 
-                    <span className="text-gray-800">
-                      {formatDate(enquiry.created_at)}
-                    </span>
+                  {enquiry.message && (
+                    <div className="mt-4 rounded-xl border border-primary/10 bg-surface-soft p-3.5">
+                      <div className="flex items-center gap-2">
+                        <MessageSquareText
+                          size={14}
+                          className="text-primary"
+                        />
+
+                        <p className="text-[10px] font-semibold uppercase tracking-[0.12em] text-primary">
+                          Requirements
+                        </p>
+                      </div>
+
+                      <p className="mt-2 text-sm leading-6 text-text break-words">
+                        {enquiry.message}
+                      </p>
+                    </div>
+                  )}
+
+                  {/* ACTIONS */}
+
+                  <div className="mt-4 grid grid-cols-2 gap-2">
+                    <button
+                      type="button"
+                      onClick={() =>
+                        setSelectedEnquiry(enquiry)
+                      }
+                      className="rounded-xl border border-primary/15 bg-surface-soft px-3 py-2.5 text-sm font-semibold text-primary transition hover:bg-rose-100"
+                    >
+                      View Details
+                    </button>
+
+                    <button
+                      type="button"
+                      onClick={() =>
+                        handleDelete(enquiry.id)
+                      }
+                      disabled={
+                        deletingId === enquiry.id
+                      }
+                      className="inline-flex items-center justify-center gap-1.5 rounded-xl border border-error/15 bg-error-bg px-3 py-2.5 text-sm font-semibold text-error-text transition hover:bg-error/10 disabled:opacity-60"
+                    >
+                      {deletingId === enquiry.id ? (
+                        <Loader2
+                          size={15}
+                          className="animate-spin"
+                        />
+                      ) : (
+                        <Trash2 size={15} />
+                      )}
+
+                      Delete
+                    </button>
                   </div>
-                </div>
-
-                {/* Message */}
-                {enquiry.message && (
-                  <div className="mt-4 rounded-lg bg-gray-50 p-3">
-                    <p className="text-xs font-semibold text-gray-500 mb-1">
-                      Message
-                    </p>
-
-                    <p className="text-sm text-gray-700 break-words">
-                      {enquiry.message}
-                    </p>
-                  </div>
-                )}
-
-                {/* Actions */}
-                <div className="mt-4 flex flex-col gap-2 sm:flex-row">
-                  <button
-                    type="button"
-                    onClick={() =>
-                      setSelectedEnquiry(enquiry)
-                    }
-                    className="w-full sm:w-auto flex-1 px-3 py-2.5 rounded-lg bg-gray-100 text-navy text-sm font-medium hover:bg-gray-200 transition"
-                  >
-                    View Details
-                  </button>
-
-                  <button
-                    type="button"
-                    onClick={() =>
-                      handleDelete(enquiry.id)
-                    }
-                    disabled={deletingId === enquiry.id}
-                    className="w-full sm:w-auto flex-1 inline-flex items-center justify-center gap-2 px-3 py-2.5 rounded-lg bg-red-50 text-red-600 hover:bg-red-100 transition disabled:opacity-60"
-                  >
-                    {deletingId === enquiry.id ? (
-                      <Loader2
-                        size={16}
-                        className="animate-spin"
-                      />
-                    ) : (
-                      <Trash2 size={16} />
-                    )}
-
-                    Delete
-                  </button>
                 </div>
               </div>
             ))}
@@ -536,182 +788,230 @@ export default function EnquiriesManage() {
         </>
       )}
 
-      {/* Details Modal */}
+      {/* ======================================================
+          DETAILS MODAL
+          ====================================================== */}
+
       {selectedEnquiry && (
-        <div className="fixed inset-0 z-50 bg-black/50 flex items-center justify-center p-2 sm:p-4">
-          <div className="w-full max-w-2xl max-h-[96vh] sm:max-h-[92vh] overflow-y-auto rounded-xl sm:rounded-2xl bg-white shadow-xl">
-            {/* Modal Header */}
-            <div className="sticky top-0 z-20 flex items-center justify-between gap-4 border-b border-gray-200 bg-white px-4 sm:px-6 py-4">
-              <div className="min-w-0">
-                <h2 className="text-lg sm:text-xl font-bold text-navy">
-                  Enquiry Details
-                </h2>
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center bg-ink/45 p-2 backdrop-blur-sm sm:p-4"
+          onMouseDown={(event) => {
+            if (event.target === event.currentTarget) {
+              setSelectedEnquiry(null);
+            }
+          }}
+        >
+          <div className="flex max-h-[96vh] w-full max-w-3xl flex-col overflow-hidden rounded-2xl border border-divider bg-card shadow-travel-hover sm:max-h-[92vh] sm:rounded-3xl">
+            {/* MODAL HEADER */}
 
-                <p className="text-sm text-gray-500">
-                  Enquiry #{selectedEnquiry.id}
-                </p>
+            <div className="relative shrink-0 overflow-hidden border-b border-divider bg-surface-soft px-4 py-4 sm:px-6 sm:py-5">
+              <div className="pointer-events-none absolute -right-12 -top-16 h-36 w-36 rounded-full bg-rose-200/40 blur-3xl" />
+
+              <div className="relative flex items-center justify-between gap-4">
+                <div className="min-w-0">
+                  <div className="flex items-center gap-2">
+                    <span className="h-1.5 w-7 rounded-full bg-accent" />
+
+                    <span className="text-[10px] font-semibold uppercase tracking-[0.16em] text-primary">
+                      Manyara Privé Vacations
+                    </span>
+                  </div>
+
+                  <h2 className="mt-1 font-display text-2xl font-semibold text-text-dark sm:text-3xl">
+                    Enquiry Details
+                  </h2>
+
+                  <p className="mt-0.5 text-xs text-muted sm:text-sm">
+                    Enquiry #{selectedEnquiry.id}
+                  </p>
+                </div>
+
+                <button
+                  type="button"
+                  onClick={() =>
+                    setSelectedEnquiry(null)
+                  }
+                  className="shrink-0 rounded-xl border border-divider bg-card p-2 text-muted transition hover:border-primary/20 hover:bg-surface-soft hover:text-primary"
+                  aria-label="Close enquiry details"
+                >
+                  <X size={19} />
+                </button>
               </div>
-
-              <button
-                type="button"
-                onClick={() =>
-                  setSelectedEnquiry(null)
-                }
-                className="shrink-0 rounded-lg p-2 text-gray-500 hover:bg-gray-100 hover:text-gray-800 transition"
-              >
-                <X size={20} />
-              </button>
             </div>
 
-            {/* Modal Content */}
-            <div className="p-4 sm:p-6 space-y-5">
-              {/* Enquiry Type */}
-              <div>
-                <p className="text-xs font-semibold uppercase tracking-wide text-gray-400">
-                  Enquiry Type
-                </p>
+            {/* MODAL CONTENT */}
 
-                <div className="mt-2 flex items-center gap-2">
-                  <PackageIcon
-                    size={18}
-                    className="text-navy"
+            <div className="overflow-y-auto p-4 sm:p-6">
+              {/* CUSTOMER HERO */}
+
+              <div className="rounded-2xl border border-divider bg-surface p-4 sm:p-5">
+                <div className="flex items-center gap-3">
+                  <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-2xl bg-surface-soft text-primary">
+                    <UserRound size={21} />
+                  </div>
+
+                  <div className="min-w-0">
+                    <p className="text-[10px] font-semibold uppercase tracking-[0.14em] text-muted">
+                      Customer
+                    </p>
+
+                    <h3 className="mt-0.5 truncate font-display text-2xl font-semibold text-text-dark">
+                      {selectedEnquiry.name}
+                    </h3>
+
+                    <p className="mt-0.5 flex items-center gap-1.5 text-sm text-muted">
+                      <Phone size={13} />
+                      {selectedEnquiry.phone}
+                    </p>
+                  </div>
+                </div>
+              </div>
+
+              {/* PACKAGE */}
+
+              <div className="mt-5">
+                <div className="mb-3 flex items-center gap-2">
+                  <span className="h-1.5 w-6 rounded-full bg-accent" />
+
+                  <h3 className="text-sm font-semibold text-text-dark">
+                    Travel Details
+                  </h3>
+                </div>
+
+                <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+                  <div className="rounded-xl border border-divider bg-card p-4">
+                    <DetailItem
+                      icon={PackageIcon}
+                      label="Package"
+                      value={
+                        selectedEnquiry.package_title ||
+                        (selectedEnquiry.package_id
+                          ? `Package #${selectedEnquiry.package_id}`
+                          : "General Enquiry")
+                      }
+                    />
+                  </div>
+
+                  <div className="rounded-xl border border-divider bg-card p-4">
+                    <DetailItem
+                      icon={Hash}
+                      label="Season ID"
+                      value={
+                        selectedEnquiry.seasoned_id ??
+                        "-"
+                      }
+                    />
+                  </div>
+
+                  <div className="rounded-xl border border-divider bg-card p-4">
+                    <DetailItem
+                      icon={Compass}
+                      label="Package Type"
+                      value={getPackageTypeLabel(
+                        selectedEnquiry.package_type
+                      )}
+                    />
+                  </div>
+
+                  <div className="rounded-xl border border-divider bg-card p-4">
+                    <DetailItem
+                      icon={MapPin}
+                      label="Destination"
+                      value={
+                        selectedEnquiry.destination || "-"
+                      }
+                    />
+                  </div>
+                </div>
+              </div>
+
+              {/* TRAVELLERS */}
+
+              <div className="mt-5">
+                <div className="mb-3 flex items-center gap-2">
+                  <span className="h-1.5 w-6 rounded-full bg-accent" />
+
+                  <h3 className="text-sm font-semibold text-text-dark">
+                    Traveller Requirements
+                  </h3>
+                </div>
+
+                <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
+                  <StatPill
+                    label="Adults"
+                    value={selectedEnquiry.adults ?? 0}
                   />
 
-                  <p className="text-base font-medium text-gray-900">
-                    {selectedEnquiry.package_id
-                      ? `Package Enquiry #${selectedEnquiry.package_id}`
-                      : "General Enquiry"}
-                  </p>
-                </div>
-              </div>
+                  <StatPill
+                    label="Kids"
+                    value={selectedEnquiry.kids ?? 0}
+                  />
 
-              {/* Package / Batch / Package Type */}
-              <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-                <div>
-                <p className="text-xs font-semibold uppercase tracking-wide text-gray-400">
-                    Package
-                  </p>
+                  <StatPill
+                    label="Nights"
+                    value={selectedEnquiry.nights ?? "-"}
+                  />
 
-                  <p className="mt-1 text-base font-medium text-gray-900">
-                    {selectedEnquiry.package_title || "No Package"}
-                  </p>
-
-                  {selectedEnquiry.package_id && (
-                    <p className="mt-1 text-sm text-gray-500">
-                      Package #{selectedEnquiry.package_id}
-                    </p>
-                  )}
-                </div>
-
-                <div>
-                  <p className="text-xs font-semibold uppercase tracking-wide text-gray-400">
-                    Batch ID
-                  </p>
-
-                  <p className="mt-1 text-base text-gray-800">
-                    {selectedEnquiry.batch_id ?? "-"}
-                  </p>
-                </div>
-
-                <div>
-                  <p className="text-xs font-semibold uppercase tracking-wide text-gray-400">
-                    Package Type
-                  </p>
-
-                  <p className="mt-1 text-base text-gray-800">
-                    {getPackageTypeLabel(
-                      selectedEnquiry.package_type
-                    )}
-                  </p>
-                </div>
-              </div>
-
-              {/* Customer */}
-              <div>
-                <p className="text-xs font-semibold uppercase tracking-wide text-gray-400">
-                  Customer Name
-                </p>
-
-                <p className="mt-1 text-base font-medium text-gray-900">
-                  {selectedEnquiry.name}
-                </p>
-              </div>
-
-              {/* Phone */}
-              <div>
-                <p className="text-xs font-semibold uppercase tracking-wide text-gray-400">
-                  Phone
-                </p>
-
-                <p className="mt-1 text-base text-gray-800 break-all">
-                  {selectedEnquiry.phone}
-                </p>
-              </div>
-
-              {/* Travellers + Travel Date */}
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                <div>
-                  <p className="text-xs font-semibold uppercase tracking-wide text-gray-400">
-                    Number of Travellers
-                  </p>
-
-                  <p className="mt-1 text-base text-gray-800">
-                    {selectedEnquiry.travellers}
-                  </p>
-                </div>
-
-                <div>
-                  <p className="text-xs font-semibold uppercase tracking-wide text-gray-400">
-                    Travel Date
-                  </p>
-
-                  <p className="mt-1 text-base text-gray-800">
-                    {formatTravelDate(
+                  <StatPill
+                    label="Travel Date"
+                    value={formatTravelDate(
                       selectedEnquiry.travel_date
                     )}
-                  </p>
+                  />
                 </div>
               </div>
 
-              {/* Submitted */}
-              <div>
-                <p className="text-xs font-semibold uppercase tracking-wide text-gray-400">
-                  Submitted Date & Time
-                </p>
+              {/* MESSAGE */}
 
-                <p className="mt-1 text-base text-gray-800">
-                  {formatDate(
+              <div className="mt-5">
+                <div className="mb-3 flex items-center gap-2">
+                  <span className="h-1.5 w-6 rounded-full bg-accent" />
+
+                  <h3 className="text-sm font-semibold text-text-dark">
+                    Requirements
+                  </h3>
+                </div>
+
+                <div className="rounded-2xl border border-primary/10 bg-surface-soft p-4 sm:p-5">
+                  <div className="flex items-start gap-3">
+                    <MessageSquareText
+                      size={18}
+                      className="mt-0.5 shrink-0 text-primary"
+                    />
+
+                    <p className="whitespace-pre-wrap break-words text-sm leading-6 text-text sm:text-base">
+                      {selectedEnquiry.message ||
+                        "No message provided."}
+                    </p>
+                  </div>
+                </div>
+              </div>
+
+              {/* SUBMITTED */}
+
+              <div className="mt-5 rounded-xl border border-divider bg-surface p-4">
+                <DetailItem
+                  icon={CalendarDays}
+                  label="Submitted Date & Time"
+                  value={formatDate(
                     selectedEnquiry.created_at
                   )}
-                </p>
-              </div>
-
-              {/* Message */}
-              <div>
-                <p className="text-xs font-semibold uppercase tracking-wide text-gray-400">
-                  Requirements
-                </p>
-
-                <div className="mt-2 rounded-lg bg-gray-50 p-4">
-                  <p className="text-sm sm:text-base text-gray-700 whitespace-pre-wrap break-words">
-                    {selectedEnquiry.message ||
-                      "No message provided."}
-                  </p>
-                </div>
+                />
               </div>
             </div>
 
-            {/* Modal Footer */}
-            <div className="border-t border-gray-200 p-4 sm:p-6">
+            {/* MODAL FOOTER */}
+
+            <div className="shrink-0 border-t border-divider bg-card p-4 sm:px-6">
               <button
                 type="button"
-                onClick={() =>
-                  setSelectedEnquiry(null)
-                }
-                className="w-full sm:w-auto sm:ml-auto block px-5 py-2.5 rounded-lg bg-navy text-white hover:opacity-90 transition"
+                onClick={() => setSelectedEnquiry(null)}
+                className="w-full rounded-xl bg-primary px-5 py-2.5 text-sm font-semibold text-white shadow-brand transition hover:bg-primary-dark sm:w-auto sm:min-w-[120px] sm:float-right"
               >
                 Close
               </button>
+
+              <div className="clear-both" />
             </div>
           </div>
         </div>
@@ -719,5 +1019,6 @@ export default function EnquiriesManage() {
     </div>
   );
 }
+
 
 

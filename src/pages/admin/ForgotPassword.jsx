@@ -1,14 +1,9 @@
 
 
-import { useState } from "react";
+
+import { useCallback, useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
-import {
-  ArrowLeft,
-  Eye,
-  EyeOff,
-  Mail,
-  ShieldCheck,
-} from "lucide-react";
+import { ArrowLeft, Eye, EyeOff, Mail, ShieldCheck, KeyRound } from "lucide-react";
 
 import {
   forgotPassword,
@@ -16,47 +11,233 @@ import {
   resetPassword,
 } from "../../api/passwordReset";
 
+// Change this if your login route is different (e.g. "/admin/login").
+const LOGIN_PATH = "/login";
+
+const OTP_LENGTH = 6;
+const MIN_PASSWORD_LENGTH = 6;
+const MAX_PASSWORD_LENGTH = 72; // bcrypt limit
+const RESEND_COOLDOWN_SECONDS = 30;
+
+// Backend messages that mean the current code / reset session is dead.
+const EXPIRED_PATTERN = /expired|invalid reset/i;
+
+/* ------------------------------------------------------------------ */
+/* Shared classes (same tokens as Login.jsx)                           */
+/* ------------------------------------------------------------------ */
+
+const inputClass = `
+  w-full min-h-[44px] px-3.5 sm:px-4 py-2.5
+  rounded-lg border border-border bg-input
+  outline-none focus:border-primary focus:ring-2 focus:ring-primary/15
+  text-sm text-text-dark placeholder:text-placeholder transition
+`;
+
+const primaryBtnClass = `
+  w-full min-h-[44px] px-4 py-2.5 rounded-lg
+  bg-accent text-white text-sm font-semibold shadow-brand
+  hover:bg-accent-hover active:scale-[0.99] transition
+  disabled:opacity-60 disabled:cursor-not-allowed
+`;
+
+const ghostBtnClass = `
+  w-full min-h-[44px] flex items-center justify-center gap-2 mt-2
+  text-xs sm:text-sm font-medium text-muted hover:text-text-dark
+  transition-colors disabled:opacity-60 disabled:cursor-not-allowed
+`;
+
+const labelClass =
+  "block text-xs sm:text-sm font-medium text-text-dark mb-1.5";
+
+/* ------------------------------------------------------------------ */
+/* Small presentational pieces (defined outside to avoid remounting)   */
+/* ------------------------------------------------------------------ */
+
+function Alert({ type, children }) {
+  if (!children) return null;
+
+  const isError = type === "error";
+
+  return (
+    <div
+      role={isError ? "alert" : "status"}
+      className={
+        isError
+          ? "mb-4 rounded-lg bg-error-bg border border-error/30 px-3 py-2.5"
+          : "mb-4 rounded-lg bg-surface-strong border border-divider px-3 py-2.5"
+      }
+    >
+      <p
+        className={`text-xs sm:text-sm leading-5 ${
+          isError ? "text-error-text" : "text-text-dark"
+        }`}
+      >
+        {children}
+      </p>
+    </div>
+  );
+}
+
+function StepHeader({ icon: Icon, title, children }) {
+  return (
+    <>
+      {Icon && (
+        <div className="flex justify-center mb-4">
+          <div className="w-11 h-11 sm:w-12 sm:h-12 rounded-full bg-surface-strong flex items-center justify-center">
+            <Icon className="text-primary" size={22} aria-hidden="true" />
+          </div>
+        </div>
+      )}
+
+      <h1 className="text-lg sm:text-xl font-semibold text-text-dark text-center">
+        {title}
+      </h1>
+
+      <p className="text-xs sm:text-sm leading-5 text-muted text-center mt-2 mb-5 sm:mb-6">
+        {children}
+      </p>
+    </>
+  );
+}
+
+function ProgressBar({ step }) {
+  // Steps 1-3 are the flow; step 4 is the success screen.
+  return (
+    <div
+      className="flex gap-1.5 mb-5"
+      role="progressbar"
+      aria-valuemin={1}
+      aria-valuemax={3}
+      aria-valuenow={Math.min(step, 3)}
+      aria-label="Password recovery progress"
+    >
+      {[1, 2, 3].map((n) => (
+        <span
+          key={n}
+          className={`h-1 flex-1 rounded-full transition-colors ${
+            n <= step ? "bg-primary" : "bg-divider"
+          }`}
+        />
+      ))}
+    </div>
+  );
+}
+
+function PasswordField({ id, label, value, onChange, autoFocus }) {
+  const [visible, setVisible] = useState(false);
+
+  return (
+    <div className="mb-4">
+      <label htmlFor={id} className={labelClass}>
+        {label}
+      </label>
+
+      <div className="relative">
+        <input
+          id={id}
+          type={visible ? "text" : "password"}
+          required
+          minLength={MIN_PASSWORD_LENGTH}
+          maxLength={MAX_PASSWORD_LENGTH}
+          autoComplete="new-password"
+          autoFocus={autoFocus}
+          value={value}
+          onChange={onChange}
+          placeholder="••••••••"
+          className={`${inputClass} pr-12`}
+        />
+
+        <button
+          type="button"
+          onClick={() => setVisible((prev) => !prev)}
+          className="
+            absolute right-2 sm:right-3 top-1/2 -translate-y-1/2
+            w-9 h-9 flex items-center justify-center rounded-md
+            text-muted hover:text-text-dark hover:bg-surface-strong transition
+          "
+          aria-label={visible ? "Hide password" : "Show password"}
+        >
+          {visible ? <EyeOff size={18} /> : <Eye size={18} />}
+        </button>
+      </div>
+    </div>
+  );
+}
+
+/* ------------------------------------------------------------------ */
+/* Helpers                                                             */
+/* ------------------------------------------------------------------ */
+
+function getErrorMessage(err, fallback) {
+  // No response = network / CORS / server down.
+  if (err?.request && !err?.response) {
+    return "Cannot reach the server. Check your connection and try again.";
+  }
+
+  const detail = err?.response?.data?.detail;
+
+  if (Array.isArray(detail)) {
+    return detail.map((item) => item.msg).join(", ");
+  }
+
+  return typeof detail === "string" && detail ? detail : fallback;
+}
+
+/* ------------------------------------------------------------------ */
+/* Page                                                                */
+/* ------------------------------------------------------------------ */
+
 export default function ForgotPassword() {
   const navigate = useNavigate();
 
+  // 1 = email, 2 = code, 3 = new password, 4 = success
   const [step, setStep] = useState(1);
 
   const [email, setEmail] = useState("");
   const [code, setCode] = useState("");
-
   const [resetToken, setResetToken] = useState("");
-
   const [newPassword, setNewPassword] = useState("");
   const [confirmPassword, setConfirmPassword] = useState("");
-
-  const [showPassword, setShowPassword] = useState(false);
-  const [showConfirmPassword, setShowConfirmPassword] = useState(false);
 
   const [error, setError] = useState("");
   const [message, setMessage] = useState("");
   const [submitting, setSubmitting] = useState(false);
+  const [cooldown, setCooldown] = useState(0);
 
-  // -----------------------------------------
-  // Common error handler
-  // -----------------------------------------
-  const getErrorMessage = (err, fallback) => {
-    const detail = err?.response?.data?.detail;
+  // Resend cooldown timer
+  useEffect(() => {
+    if (cooldown <= 0) return undefined;
+    const id = setTimeout(() => setCooldown((c) => c - 1), 1000);
+    return () => clearTimeout(id);
+  }, [cooldown]);
 
-    if (Array.isArray(detail)) {
-      return detail.map((item) => item.msg).join(", ");
-    }
-
-    return detail || fallback;
-  };
-
-  // -----------------------------------------
-  // STEP 1: Send verification code
-  // -----------------------------------------
-  const handleSendCode = async (e) => {
-    e.preventDefault();
-
+  const clearFeedback = useCallback(() => {
     setError("");
     setMessage("");
+  }, []);
+
+  const goToLogin = useCallback(
+    () => navigate(LOGIN_PATH, { replace: true }),
+    [navigate]
+  );
+
+  // Restart the whole flow (used when the code/session has expired)
+  const restartFlow = useCallback((errorMessage) => {
+    setStep(1);
+    setCode("");
+    setResetToken("");
+    setNewPassword("");
+    setConfirmPassword("");
+    setMessage("");
+    setError(errorMessage);
+  }, []);
+
+  /* ---------------- Step 1: send code ---------------- */
+  const handleSendCode = async (e) => {
+    e.preventDefault();
+    if (submitting) return;
+
+    clearFeedback();
     setSubmitting(true);
 
     try {
@@ -65,69 +246,77 @@ export default function ForgotPassword() {
       setMessage(
         "If an account exists for this email, a verification code has been sent."
       );
-
+      setCooldown(RESEND_COOLDOWN_SECONDS);
       setStep(2);
     } catch (err) {
       setError(
-        getErrorMessage(
-          err,
-          "Unable to send verification code. Please try again."
-        )
+        getErrorMessage(err, "Unable to send verification code. Please try again.")
       );
     } finally {
       setSubmitting(false);
     }
   };
 
-  // -----------------------------------------
-  // STEP 2: Verify OTP
-  // -----------------------------------------
+  /* ---------------- Step 2: resend code ---------------- */
+  const handleResend = async () => {
+    if (submitting || cooldown > 0) return;
+
+    clearFeedback();
+    setSubmitting(true);
+
+    try {
+      await forgotPassword(email.trim());
+
+      setCode("");
+      setMessage("A new verification code has been sent.");
+      setCooldown(RESEND_COOLDOWN_SECONDS);
+    } catch (err) {
+      setError(getErrorMessage(err, "Unable to resend code. Please try again."));
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
+  /* ---------------- Step 2: verify code ---------------- */
   const handleVerifyCode = async (e) => {
     e.preventDefault();
+    if (submitting) return;
 
-    setError("");
-    setMessage("");
+    clearFeedback();
 
-    if (!/^\d{6}$/.test(code)) {
-      setError("Please enter a valid 6-digit verification code.");
+    if (code.length !== OTP_LENGTH) {
+      setError(`Enter the ${OTP_LENGTH}-digit verification code.`);
       return;
     }
 
     setSubmitting(true);
 
     try {
-      const response = await verifyResetCode(email.trim(), code);
+      const data = await verifyResetCode(email.trim(), code);
 
-      setResetToken(response.reset_token);
+      if (!data?.reset_token) {
+        throw new Error("Missing reset token in response");
+      }
 
-      setMessage(
-        "Verification successful. You can now create a new password."
-      );
-
+      setResetToken(data.reset_token);
+      setCode("");
       setStep(3);
     } catch (err) {
-      setError(
-        getErrorMessage(
-          err,
-          "Invalid or expired verification code."
-        )
-      );
+      setError(getErrorMessage(err, "Invalid or expired verification code."));
     } finally {
       setSubmitting(false);
     }
   };
 
-  // -----------------------------------------
-  // STEP 3: Reset password
-  // -----------------------------------------
+  /* ---------------- Step 3: reset password ---------------- */
   const handleResetPassword = async (e) => {
     e.preventDefault();
+    if (submitting) return;
 
-    setError("");
-    setMessage("");
+    clearFeedback();
 
-    if (newPassword.length < 6) {
-      setError("Password must be at least 6 characters.");
+    if (newPassword.length < MIN_PASSWORD_LENGTH) {
+      setError(`Password must be at least ${MIN_PASSWORD_LENGTH} characters.`);
       return;
     }
 
@@ -139,632 +328,1024 @@ export default function ForgotPassword() {
     setSubmitting(true);
 
     try {
-      await resetPassword(
-        resetToken,
-        newPassword,
-        confirmPassword
-      );
+      await resetPassword(resetToken, newPassword, confirmPassword);
 
-      setMessage("Your password has been reset successfully.");
-
+      // Don't keep secrets in state once we're done.
+      setResetToken("");
+      setNewPassword("");
+      setConfirmPassword("");
       setStep(4);
     } catch (err) {
-      setError(
-        getErrorMessage(
-          err,
-          "Unable to reset password. Please try again."
-        )
-      );
+      const msg = getErrorMessage(err, "Unable to reset password. Please try again.");
+
+      if (EXPIRED_PATTERN.test(msg)) {
+        restartFlow(`${msg}. Request a new verification code to continue.`);
+      } else {
+        setError(msg);
+      }
     } finally {
       setSubmitting(false);
     }
   };
 
-  // -----------------------------------------
-  // Back to login
-  // -----------------------------------------
-  const handleBackToLogin = () => {
-    navigate("/login");
-  };
-
-  // -----------------------------------------
-  // Change email
-  // -----------------------------------------
   const handleChangeEmail = () => {
     setStep(1);
     setCode("");
-    setError("");
-    setMessage("");
+    setCooldown(0);
+    clearFeedback();
   };
 
+  /* ---------------- Render ---------------- */
   return (
-    <div className="min-h-[100dvh] bg-navy flex items-center justify-center px-4 py-6 sm:px-6 sm:py-10">
-
+    <div className="min-h-[100dvh] bg-petal-gradient flex items-center justify-center px-4 py-6 sm:px-6 sm:py-10">
       <div className="w-full max-w-sm sm:max-w-md">
-
-        {/* -------------------------------- */}
-        {/* BRAND */}
-        {/* -------------------------------- */}
+        {/* Brand */}
         <div className="text-center mb-6 sm:mb-8">
-
-          <p className="font-display text-2xl sm:text-3xl font-semibold text-ivory">
-            On a <span className="text-accent">Trip</span> Holiday
+          <p className="font-display text-3xl sm:text-4xl font-semibold text-text-display leading-tight">
+            Manya Privé Vacations
           </p>
 
-          <p className="text-ivory/50 text-xs sm:text-sm mt-1">
+          <p className="text-muted text-xs sm:text-sm mt-1.5">
             Password recovery
           </p>
-
         </div>
 
-        {/* -------------------------------- */}
-        {/* CARD */}
-        {/* -------------------------------- */}
-        <div className="w-full bg-ivory rounded-xl sm:rounded-2xl p-5 sm:p-7 shadow-xl">
+        {/* Card */}
+        <div className="w-full bg-card border border-divider rounded-xl sm:rounded-2xl p-5 sm:p-7 shadow-travel-hover">
+          {step < 4 && <ProgressBar step={step} />}
 
-          {/* ================================= */}
-          {/* STEP 1 — EMAIL */}
-          {/* ================================= */}
+          {/* Step 1 — Email */}
           {step === 1 && (
-            <form
-              onSubmit={handleSendCode}
-              className="space-y-0"
-            >
+            <form onSubmit={handleSendCode} noValidate={false}>
+              <StepHeader icon={Mail} title="Forgot your password?">
+                Enter your account email and we'll send you a verification code.
+              </StepHeader>
 
-              {/* Icon */}
-              <div className="flex justify-center mb-4 sm:mb-5">
-                <div className="w-11 h-11 sm:w-12 sm:h-12 rounded-full bg-navy/5 flex items-center justify-center">
-                  <Mail
-                    className="text-navy"
-                    size={22}
-                  />
-                </div>
-              </div>
-
-              {/* Heading */}
-              <h1 className="text-lg sm:text-xl font-semibold text-navy text-center">
-                Forgot your password?
-              </h1>
-
-              <p className="text-xs sm:text-sm leading-5 text-navy/60 text-center mt-2 mb-5 sm:mb-6">
-                Enter your email address and we'll send you a
-                verification code.
-              </p>
-
-              {/* Email */}
               <div className="mb-4">
-
-                <label className="block text-xs sm:text-sm font-medium text-navy mb-1.5">
+                <label htmlFor="fp-email" className={labelClass}>
                   Email
                 </label>
 
                 <input
+                  id="fp-email"
                   type="email"
                   required
+                  autoFocus
                   autoComplete="email"
                   value={email}
                   onChange={(e) => setEmail(e.target.value)}
-                  placeholder="you@onatripholiday.com"
-                  className="
-                    w-full
-                    min-h-[44px]
-                    px-3.5 sm:px-4
-                    py-2.5
-                    rounded-lg
-                    border border-navy/15
-                    bg-white
-                    outline-none
-                    focus:border-secondary
-                    focus:ring-2
-                    focus:ring-secondary/10
-                    text-sm
-                    text-navy
-                    placeholder:text-navy/35
-                    transition
-                  "
+                  placeholder="you@example.com"
+                  className={inputClass}
                 />
-
               </div>
 
-              {/* Error */}
-              {error && (
-                <div className="mb-4 rounded-lg bg-red-50 border border-red-100 px-3 py-2.5">
-                  <p className="text-xs sm:text-sm text-red-600 leading-5">
-                    {error}
-                  </p>
-                </div>
-              )}
+              <Alert type="error">{error}</Alert>
 
-              {/* Message */}
-              {message && (
-                <div className="mb-4 rounded-lg bg-green-50 border border-green-100 px-3 py-2.5">
-                  <p className="text-xs sm:text-sm text-green-600 leading-5">
-                    {message}
-                  </p>
-                </div>
-              )}
-
-              {/* Send Code */}
-              <button
-                type="submit"
-                disabled={submitting}
-                className="
-                  w-full
-                  min-h-[44px]
-                  px-4
-                  py-2.5
-                  rounded-lg
-                  bg-navy
-                  text-ivory
-                  text-sm
-                  font-semibold
-                  hover:bg-navy-light
-                  active:scale-[0.99]
-                  transition
-                  disabled:opacity-60
-                  disabled:cursor-not-allowed
-                "
-              >
-                {submitting
-                  ? "Sending code…"
-                  : "Send Verification Code"}
+              <button type="submit" disabled={submitting} className={primaryBtnClass}>
+                {submitting ? "Sending code…" : "Send verification code"}
               </button>
 
-              {/* Back */}
-              <button
-                type="button"
-                onClick={handleBackToLogin}
-                className="
-                  w-full
-                  min-h-[44px]
-                  flex
-                  items-center
-                  justify-center
-                  gap-2
-                  mt-3
-                  text-xs sm:text-sm
-                  text-navy/60
-                  hover:text-navy
-                  transition
-                "
-              >
+              <button type="button" onClick={goToLogin} className={ghostBtnClass}>
                 <ArrowLeft size={16} />
-                Back to login
+                Back to sign in
               </button>
-
             </form>
           )}
 
-          {/* ================================= */}
-          {/* STEP 2 — OTP */}
-          {/* ================================= */}
+          {/* Step 2 — Code */}
           {step === 2 && (
             <form onSubmit={handleVerifyCode}>
-
-              {/* Icon */}
-              <div className="flex justify-center mb-4 sm:mb-5">
-                <div className="w-11 h-11 sm:w-12 sm:h-12 rounded-full bg-navy/5 flex items-center justify-center">
-                  <ShieldCheck
-                    className="text-navy"
-                    size={22}
-                  />
-                </div>
-              </div>
-
-              {/* Heading */}
-              <h1 className="text-lg sm:text-xl font-semibold text-navy text-center">
-                Verify your email
-              </h1>
-
-              <p className="text-xs sm:text-sm leading-5 text-navy/60 text-center mt-2 mb-5 sm:mb-6">
-
-                Enter the 6-digit verification code sent to
-
-                <span className="block mt-1 font-medium text-navy break-all">
+              <StepHeader icon={ShieldCheck} title="Verify your email">
+                Enter the {OTP_LENGTH}-digit code sent to
+                <span className="block mt-1 font-medium text-text-dark break-all">
                   {email}
                 </span>
+              </StepHeader>
 
-              </p>
-
-              {/* OTP */}
               <div className="mb-4">
-
-                <label className="block text-xs sm:text-sm font-medium text-navy mb-1.5">
-                  Verification Code
+                <label htmlFor="fp-code" className={labelClass}>
+                  Verification code
                 </label>
 
                 <input
+                  id="fp-code"
                   type="text"
                   inputMode="numeric"
                   autoComplete="one-time-code"
-                  maxLength={6}
+                  autoFocus
                   required
+                  maxLength={OTP_LENGTH}
                   value={code}
                   onChange={(e) =>
-                    setCode(
-                      e.target.value
-                        .replace(/\D/g, "")
-                        .slice(0, 6)
-                    )
+                    setCode(e.target.value.replace(/\D/g, "").slice(0, OTP_LENGTH))
                   }
                   placeholder="000000"
-                  className="
-                    w-full
-                    min-h-[48px]
-                    px-3
-                    py-2.5
-                    rounded-lg
-                    border border-navy/15
-                    bg-white
-                    outline-none
-                    focus:border-secondary
-                    focus:ring-2
-                    focus:ring-secondary/10
-                    text-center
-                    text-lg
-                    sm:text-xl
-                    tracking-[0.35em]
-                    font-semibold
-                    text-navy
-                    placeholder:text-navy/25
-                    transition
-                  "
+                  className={`${inputClass} min-h-[48px] text-center text-lg sm:text-xl tracking-[0.35em] font-semibold`}
                 />
-
               </div>
 
-              {/* Error */}
-              {error && (
-                <div className="mb-4 rounded-lg bg-red-50 border border-red-100 px-3 py-2.5">
-                  <p className="text-xs sm:text-sm text-red-600 leading-5">
-                    {error}
-                  </p>
-                </div>
-              )}
+              <Alert type="error">{error}</Alert>
+              <Alert type="info">{message}</Alert>
 
-              {/* Message */}
-              {message && (
-                <div className="mb-4 rounded-lg bg-green-50 border border-green-100 px-3 py-2.5">
-                  <p className="text-xs sm:text-sm text-green-600 leading-5">
-                    {message}
-                  </p>
-                </div>
-              )}
-
-              {/* Verify */}
               <button
                 type="submit"
-                disabled={submitting || code.length !== 6}
-                className="
-                  w-full
-                  min-h-[44px]
-                  px-4
-                  py-2.5
-                  rounded-lg
-                  bg-navy
-                  text-ivory
-                  text-sm
-                  font-semibold
-                  hover:bg-navy-light
-                  active:scale-[0.99]
-                  transition
-                  disabled:opacity-60
-                  disabled:cursor-not-allowed
-                "
+                disabled={submitting || code.length !== OTP_LENGTH}
+                className={primaryBtnClass}
               >
-                {submitting
-                  ? "Verifying…"
-                  : "Verify Code"}
+                {submitting ? "Verifying…" : "Verify code"}
               </button>
 
-              {/* Change Email */}
+              <button
+                type="button"
+                onClick={handleResend}
+                disabled={submitting || cooldown > 0}
+                className={ghostBtnClass}
+              >
+                {cooldown > 0 ? `Resend code in ${cooldown}s` : "Resend code"}
+              </button>
+
               <button
                 type="button"
                 onClick={handleChangeEmail}
-                className="
-                  w-full
-                  min-h-[44px]
-                  flex
-                  items-center
-                  justify-center
-                  gap-2
-                  mt-3
-                  text-xs sm:text-sm
-                  text-navy/60
-                  hover:text-navy
-                  transition
-                "
+                disabled={submitting}
+                className={ghostBtnClass.replace("mt-2", "mt-0")}
               >
                 <ArrowLeft size={16} />
                 Change email
               </button>
-
             </form>
           )}
 
-          {/* ================================= */}
-          {/* STEP 3 — NEW PASSWORD */}
-          {/* ================================= */}
+          {/* Step 3 — New password */}
           {step === 3 && (
             <form onSubmit={handleResetPassword}>
-
-              {/* Heading */}
-              <h1 className="text-lg sm:text-xl font-semibold text-navy text-center">
-                Create new password
-              </h1>
-
-              <p className="text-xs sm:text-sm leading-5 text-navy/60 text-center mt-2 mb-5 sm:mb-6">
+              <StepHeader icon={KeyRound} title="Create new password">
                 Choose a strong password for your account.
+              </StepHeader>
+
+              <PasswordField
+                id="fp-new-password"
+                label="New password"
+                value={newPassword}
+                onChange={(e) => setNewPassword(e.target.value)}
+                autoFocus
+              />
+
+              <PasswordField
+                id="fp-confirm-password"
+                label="Confirm password"
+                value={confirmPassword}
+                onChange={(e) => setConfirmPassword(e.target.value)}
+              />
+
+              <p className="text-[11px] sm:text-xs text-muted mb-4">
+                Use at least {MIN_PASSWORD_LENGTH} characters.
               </p>
 
-              {/* New Password */}
-              <div className="mb-4">
+              <Alert type="error">{error}</Alert>
 
-                <label className="block text-xs sm:text-sm font-medium text-navy mb-1.5">
-                  New Password
-                </label>
-
-                <div className="relative">
-
-                  <input
-                    type={showPassword ? "text" : "password"}
-                    required
-                    minLength={6}
-                    maxLength={72}
-                    autoComplete="new-password"
-                    value={newPassword}
-                    onChange={(e) =>
-                      setNewPassword(e.target.value)
-                    }
-                    placeholder="••••••••"
-                    className="
-                      w-full
-                      min-h-[44px]
-                      px-3.5 sm:px-4
-                      pr-11
-                      py-2.5
-                      rounded-lg
-                      border border-navy/15
-                      bg-white
-                      outline-none
-                      focus:border-secondary
-                      focus:ring-2
-                      focus:ring-secondary/10
-                      text-sm
-                      text-navy
-                      transition
-                    "
-                  />
-
-                  <button
-                    type="button"
-                    onClick={() =>
-                      setShowPassword((prev) => !prev)
-                    }
-                    className="
-                      absolute
-                      right-2
-                      sm:right-3
-                      top-1/2
-                      -translate-y-1/2
-                      w-9
-                      h-9
-                      flex
-                      items-center
-                      justify-center
-                      rounded-md
-                      text-navy/50
-                      hover:text-navy
-                      hover:bg-navy/5
-                      transition
-                    "
-                    aria-label={
-                      showPassword
-                        ? "Hide password"
-                        : "Show password"
-                    }
-                  >
-                    {showPassword ? (
-                      <EyeOff size={18} />
-                    ) : (
-                      <Eye size={18} />
-                    )}
-                  </button>
-
-                </div>
-
-              </div>
-
-              {/* Confirm Password */}
-              <div className="mb-4">
-
-                <label className="block text-xs sm:text-sm font-medium text-navy mb-1.5">
-                  Confirm Password
-                </label>
-
-                <div className="relative">
-
-                  <input
-                    type={
-                      showConfirmPassword
-                        ? "text"
-                        : "password"
-                    }
-                    required
-                    minLength={6}
-                    maxLength={72}
-                    autoComplete="new-password"
-                    value={confirmPassword}
-                    onChange={(e) =>
-                      setConfirmPassword(e.target.value)
-                    }
-                    placeholder="••••••••"
-                    className="
-                      w-full
-                      min-h-[44px]
-                      px-3.5 sm:px-4
-                      pr-11
-                      py-2.5
-                      rounded-lg
-                      border border-navy/15
-                      bg-white
-                      outline-none
-                      focus:border-secondary
-                      focus:ring-2
-                      focus:ring-secondary/10
-                      text-sm
-                      text-navy
-                      transition
-                    "
-                  />
-
-                  <button
-                    type="button"
-                    onClick={() =>
-                      setShowConfirmPassword(
-                        (prev) => !prev
-                      )
-                    }
-                    className="
-                      absolute
-                      right-2
-                      sm:right-3
-                      top-1/2
-                      -translate-y-1/2
-                      w-9
-                      h-9
-                      flex
-                      items-center
-                      justify-center
-                      rounded-md
-                      text-navy/50
-                      hover:text-navy
-                      hover:bg-navy/5
-                      transition
-                    "
-                    aria-label={
-                      showConfirmPassword
-                        ? "Hide password"
-                        : "Show password"
-                    }
-                  >
-                    {showConfirmPassword ? (
-                      <EyeOff size={18} />
-                    ) : (
-                      <Eye size={18} />
-                    )}
-                  </button>
-
-                </div>
-
-              </div>
-
-              {/* Password Hint */}
-              <p className="text-[11px] sm:text-xs text-navy/45 mb-4">
-                Password must contain at least 6 characters.
-              </p>
-
-              {/* Error */}
-              {error && (
-                <div className="mb-4 rounded-lg bg-red-50 border border-red-100 px-3 py-2.5">
-                  <p className="text-xs sm:text-sm text-red-600 leading-5">
-                    {error}
-                  </p>
-                </div>
-              )}
-
-              {/* Reset */}
-              <button
-                type="submit"
-                disabled={submitting}
-                className="
-                  w-full
-                  min-h-[44px]
-                  px-4
-                  py-2.5
-                  rounded-lg
-                  bg-navy
-                  text-ivory
-                  text-sm
-                  font-semibold
-                  hover:bg-navy-light
-                  active:scale-[0.99]
-                  transition
-                  disabled:opacity-60
-                  disabled:cursor-not-allowed
-                "
-              >
-                {submitting
-                  ? "Resetting password…"
-                  : "Reset Password"}
+              <button type="submit" disabled={submitting} className={primaryBtnClass}>
+                {submitting ? "Resetting password…" : "Reset password"}
               </button>
-
             </form>
           )}
 
-          {/* ================================= */}
-          {/* STEP 4 — SUCCESS */}
-          {/* ================================= */}
+          {/* Step 4 — Success */}
           {step === 4 && (
             <div className="text-center">
-
-              {/* Success Icon */}
               <div className="flex justify-center mb-4 sm:mb-5">
-
-                <div className="w-14 h-14 sm:w-16 sm:h-16 rounded-full bg-green-100 flex items-center justify-center">
-
-                  <ShieldCheck
-                    className="text-green-600"
-                    size={28}
-                  />
-
+                <div className="w-14 h-14 sm:w-16 sm:h-16 rounded-full bg-surface-strong flex items-center justify-center">
+                  <ShieldCheck className="text-primary" size={28} aria-hidden="true" />
                 </div>
-
               </div>
 
-              {/* Heading */}
-              <h1 className="text-lg sm:text-xl font-semibold text-navy">
-                Password reset successful
+              <h1 className="text-lg sm:text-xl font-semibold text-text-dark">
+                Password reset
               </h1>
 
-              <p className="text-xs sm:text-sm leading-5 text-navy/60 mt-2 mb-5 sm:mb-6">
-                Your password has been updated successfully.
-                You can now sign in with your new password.
+              <p className="text-xs sm:text-sm leading-5 text-muted mt-2 mb-5 sm:mb-6">
+                Your password has been updated. Sign in with your new password.
               </p>
 
-              {/* Login */}
-              <button
-                type="button"
-                onClick={handleBackToLogin}
-                className="
-                  w-full
-                  min-h-[44px]
-                  px-4
-                  py-2.5
-                  rounded-lg
-                  bg-navy
-                  text-ivory
-                  text-sm
-                  font-semibold
-                  hover:bg-navy-light
-                  active:scale-[0.99]
-                  transition
-                "
-              >
-                Back to Login
+              <button type="button" onClick={goToLogin} className={primaryBtnClass}>
+                Back to sign in
               </button>
-
             </div>
           )}
-
         </div>
 
-        {/* Small footer spacing */}
-        <p className="text-center text-[10px] sm:text-xs text-ivory/30 mt-5">
-          © On a Trip Holiday
+        {/* Footer */}
+        <p className="text-center text-[10px] sm:text-xs text-muted mt-5">
+          © Manya Privé Vacations
         </p>
-
       </div>
     </div>
   );
 }
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+// import { useState } from "react";
+// import { useNavigate } from "react-router-dom";
+// import {
+//   ArrowLeft,
+//   Eye,
+//   EyeOff,
+//   Mail,
+//   ShieldCheck,
+// } from "lucide-react";
+
+// import {
+//   forgotPassword,
+//   verifyResetCode,
+//   resetPassword,
+// } from "../../api/passwordReset";
+
+// export default function ForgotPassword() {
+//   const navigate = useNavigate();
+
+//   const [step, setStep] = useState(1);
+
+//   const [email, setEmail] = useState("");
+//   const [code, setCode] = useState("");
+
+//   const [resetToken, setResetToken] = useState("");
+
+//   const [newPassword, setNewPassword] = useState("");
+//   const [confirmPassword, setConfirmPassword] = useState("");
+
+//   const [showPassword, setShowPassword] = useState(false);
+//   const [showConfirmPassword, setShowConfirmPassword] = useState(false);
+
+//   const [error, setError] = useState("");
+//   const [message, setMessage] = useState("");
+//   const [submitting, setSubmitting] = useState(false);
+
+//   // -----------------------------------------
+//   // Common error handler
+//   // -----------------------------------------
+//   const getErrorMessage = (err, fallback) => {
+//     const detail = err?.response?.data?.detail;
+
+//     if (Array.isArray(detail)) {
+//       return detail.map((item) => item.msg).join(", ");
+//     }
+
+//     return detail || fallback;
+//   };
+
+//   // -----------------------------------------
+//   // STEP 1: Send verification code
+//   // -----------------------------------------
+//   const handleSendCode = async (e) => {
+//     e.preventDefault();
+
+//     setError("");
+//     setMessage("");
+//     setSubmitting(true);
+
+//     try {
+//       await forgotPassword(email.trim());
+
+//       setMessage(
+//         "If an account exists for this email, a verification code has been sent."
+//       );
+
+//       setStep(2);
+//     } catch (err) {
+//       setError(
+//         getErrorMessage(
+//           err,
+//           "Unable to send verification code. Please try again."
+//         )
+//       );
+//     } finally {
+//       setSubmitting(false);
+//     }
+//   };
+
+//   // -----------------------------------------
+//   // STEP 2: Verify OTP
+//   // -----------------------------------------
+//   const handleVerifyCode = async (e) => {
+//     e.preventDefault();
+
+//     setError("");
+//     setMessage("");
+
+//     if (!/^\d{6}$/.test(code)) {
+//       setError("Please enter a valid 6-digit verification code.");
+//       return;
+//     }
+
+//     setSubmitting(true);
+
+//     try {
+//       const response = await verifyResetCode(email.trim(), code);
+
+//       setResetToken(response.reset_token);
+
+//       setMessage(
+//         "Verification successful. You can now create a new password."
+//       );
+
+//       setStep(3);
+//     } catch (err) {
+//       setError(
+//         getErrorMessage(
+//           err,
+//           "Invalid or expired verification code."
+//         )
+//       );
+//     } finally {
+//       setSubmitting(false);
+//     }
+//   };
+
+//   // -----------------------------------------
+//   // STEP 3: Reset password
+//   // -----------------------------------------
+//   const handleResetPassword = async (e) => {
+//     e.preventDefault();
+
+//     setError("");
+//     setMessage("");
+
+//     if (newPassword.length < 6) {
+//       setError("Password must be at least 6 characters.");
+//       return;
+//     }
+
+//     if (newPassword !== confirmPassword) {
+//       setError("Password and Confirm Password do not match.");
+//       return;
+//     }
+
+//     setSubmitting(true);
+
+//     try {
+//       await resetPassword(
+//         resetToken,
+//         newPassword,
+//         confirmPassword
+//       );
+
+//       setMessage("Your password has been reset successfully.");
+
+//       setStep(4);
+//     } catch (err) {
+//       setError(
+//         getErrorMessage(
+//           err,
+//           "Unable to reset password. Please try again."
+//         )
+//       );
+//     } finally {
+//       setSubmitting(false);
+//     }
+//   };
+
+//   // -----------------------------------------
+//   // Back to login
+//   // -----------------------------------------
+//   const handleBackToLogin = () => {
+//     navigate("/login");
+//   };
+
+//   // -----------------------------------------
+//   // Change email
+//   // -----------------------------------------
+//   const handleChangeEmail = () => {
+//     setStep(1);
+//     setCode("");
+//     setError("");
+//     setMessage("");
+//   };
+
+//   return (
+//     <div className="min-h-[100dvh] bg-navy flex items-center justify-center px-4 py-6 sm:px-6 sm:py-10">
+
+//       <div className="w-full max-w-sm sm:max-w-md">
+
+//         {/* -------------------------------- */}
+//         {/* BRAND */}
+//         {/* -------------------------------- */}
+//         <div className="text-center mb-6 sm:mb-8">
+
+//           <p className="font-display text-2xl sm:text-3xl font-semibold text-ivory">
+//             On a <span className="text-accent">Trip</span> Holiday
+//           </p>
+
+//           <p className="text-ivory/50 text-xs sm:text-sm mt-1">
+//             Password recovery
+//           </p>
+
+//         </div>
+
+//         {/* -------------------------------- */}
+//         {/* CARD */}
+//         {/* -------------------------------- */}
+//         <div className="w-full bg-ivory rounded-xl sm:rounded-2xl p-5 sm:p-7 shadow-xl">
+
+//           {/* ================================= */}
+//           {/* STEP 1 — EMAIL */}
+//           {/* ================================= */}
+//           {step === 1 && (
+//             <form
+//               onSubmit={handleSendCode}
+//               className="space-y-0"
+//             >
+
+//               {/* Icon */}
+//               <div className="flex justify-center mb-4 sm:mb-5">
+//                 <div className="w-11 h-11 sm:w-12 sm:h-12 rounded-full bg-navy/5 flex items-center justify-center">
+//                   <Mail
+//                     className="text-navy"
+//                     size={22}
+//                   />
+//                 </div>
+//               </div>
+
+//               {/* Heading */}
+//               <h1 className="text-lg sm:text-xl font-semibold text-navy text-center">
+//                 Forgot your password?
+//               </h1>
+
+//               <p className="text-xs sm:text-sm leading-5 text-navy/60 text-center mt-2 mb-5 sm:mb-6">
+//                 Enter your email address and we'll send you a
+//                 verification code.
+//               </p>
+
+//               {/* Email */}
+//               <div className="mb-4">
+
+//                 <label className="block text-xs sm:text-sm font-medium text-navy mb-1.5">
+//                   Email
+//                 </label>
+
+//                 <input
+//                   type="email"
+//                   required
+//                   autoComplete="email"
+//                   value={email}
+//                   onChange={(e) => setEmail(e.target.value)}
+//                   placeholder="you@onatripholiday.com"
+//                   className="
+//                     w-full
+//                     min-h-[44px]
+//                     px-3.5 sm:px-4
+//                     py-2.5
+//                     rounded-lg
+//                     border border-navy/15
+//                     bg-white
+//                     outline-none
+//                     focus:border-secondary
+//                     focus:ring-2
+//                     focus:ring-secondary/10
+//                     text-sm
+//                     text-navy
+//                     placeholder:text-navy/35
+//                     transition
+//                   "
+//                 />
+
+//               </div>
+
+//               {/* Error */}
+//               {error && (
+//                 <div className="mb-4 rounded-lg bg-red-50 border border-red-100 px-3 py-2.5">
+//                   <p className="text-xs sm:text-sm text-red-600 leading-5">
+//                     {error}
+//                   </p>
+//                 </div>
+//               )}
+
+//               {/* Message */}
+//               {message && (
+//                 <div className="mb-4 rounded-lg bg-green-50 border border-green-100 px-3 py-2.5">
+//                   <p className="text-xs sm:text-sm text-green-600 leading-5">
+//                     {message}
+//                   </p>
+//                 </div>
+//               )}
+
+//               {/* Send Code */}
+//               <button
+//                 type="submit"
+//                 disabled={submitting}
+//                 className="
+//                   w-full
+//                   min-h-[44px]
+//                   px-4
+//                   py-2.5
+//                   rounded-lg
+//                   bg-navy
+//                   text-ivory
+//                   text-sm
+//                   font-semibold
+//                   hover:bg-navy-light
+//                   active:scale-[0.99]
+//                   transition
+//                   disabled:opacity-60
+//                   disabled:cursor-not-allowed
+//                 "
+//               >
+//                 {submitting
+//                   ? "Sending code…"
+//                   : "Send Verification Code"}
+//               </button>
+
+//               {/* Back */}
+//               <button
+//                 type="button"
+//                 onClick={handleBackToLogin}
+//                 className="
+//                   w-full
+//                   min-h-[44px]
+//                   flex
+//                   items-center
+//                   justify-center
+//                   gap-2
+//                   mt-3
+//                   text-xs sm:text-sm
+//                   text-navy/60
+//                   hover:text-navy
+//                   transition
+//                 "
+//               >
+//                 <ArrowLeft size={16} />
+//                 Back to login
+//               </button>
+
+//             </form>
+//           )}
+
+//           {/* ================================= */}
+//           {/* STEP 2 — OTP */}
+//           {/* ================================= */}
+//           {step === 2 && (
+//             <form onSubmit={handleVerifyCode}>
+
+//               {/* Icon */}
+//               <div className="flex justify-center mb-4 sm:mb-5">
+//                 <div className="w-11 h-11 sm:w-12 sm:h-12 rounded-full bg-navy/5 flex items-center justify-center">
+//                   <ShieldCheck
+//                     className="text-navy"
+//                     size={22}
+//                   />
+//                 </div>
+//               </div>
+
+//               {/* Heading */}
+//               <h1 className="text-lg sm:text-xl font-semibold text-navy text-center">
+//                 Verify your email
+//               </h1>
+
+//               <p className="text-xs sm:text-sm leading-5 text-navy/60 text-center mt-2 mb-5 sm:mb-6">
+
+//                 Enter the 6-digit verification code sent to
+
+//                 <span className="block mt-1 font-medium text-navy break-all">
+//                   {email}
+//                 </span>
+
+//               </p>
+
+//               {/* OTP */}
+//               <div className="mb-4">
+
+//                 <label className="block text-xs sm:text-sm font-medium text-navy mb-1.5">
+//                   Verification Code
+//                 </label>
+
+//                 <input
+//                   type="text"
+//                   inputMode="numeric"
+//                   autoComplete="one-time-code"
+//                   maxLength={6}
+//                   required
+//                   value={code}
+//                   onChange={(e) =>
+//                     setCode(
+//                       e.target.value
+//                         .replace(/\D/g, "")
+//                         .slice(0, 6)
+//                     )
+//                   }
+//                   placeholder="000000"
+//                   className="
+//                     w-full
+//                     min-h-[48px]
+//                     px-3
+//                     py-2.5
+//                     rounded-lg
+//                     border border-navy/15
+//                     bg-white
+//                     outline-none
+//                     focus:border-secondary
+//                     focus:ring-2
+//                     focus:ring-secondary/10
+//                     text-center
+//                     text-lg
+//                     sm:text-xl
+//                     tracking-[0.35em]
+//                     font-semibold
+//                     text-navy
+//                     placeholder:text-navy/25
+//                     transition
+//                   "
+//                 />
+
+//               </div>
+
+//               {/* Error */}
+//               {error && (
+//                 <div className="mb-4 rounded-lg bg-red-50 border border-red-100 px-3 py-2.5">
+//                   <p className="text-xs sm:text-sm text-red-600 leading-5">
+//                     {error}
+//                   </p>
+//                 </div>
+//               )}
+
+//               {/* Message */}
+//               {message && (
+//                 <div className="mb-4 rounded-lg bg-green-50 border border-green-100 px-3 py-2.5">
+//                   <p className="text-xs sm:text-sm text-green-600 leading-5">
+//                     {message}
+//                   </p>
+//                 </div>
+//               )}
+
+//               {/* Verify */}
+//               <button
+//                 type="submit"
+//                 disabled={submitting || code.length !== 6}
+//                 className="
+//                   w-full
+//                   min-h-[44px]
+//                   px-4
+//                   py-2.5
+//                   rounded-lg
+//                   bg-navy
+//                   text-ivory
+//                   text-sm
+//                   font-semibold
+//                   hover:bg-navy-light
+//                   active:scale-[0.99]
+//                   transition
+//                   disabled:opacity-60
+//                   disabled:cursor-not-allowed
+//                 "
+//               >
+//                 {submitting
+//                   ? "Verifying…"
+//                   : "Verify Code"}
+//               </button>
+
+//               {/* Change Email */}
+//               <button
+//                 type="button"
+//                 onClick={handleChangeEmail}
+//                 className="
+//                   w-full
+//                   min-h-[44px]
+//                   flex
+//                   items-center
+//                   justify-center
+//                   gap-2
+//                   mt-3
+//                   text-xs sm:text-sm
+//                   text-navy/60
+//                   hover:text-navy
+//                   transition
+//                 "
+//               >
+//                 <ArrowLeft size={16} />
+//                 Change email
+//               </button>
+
+//             </form>
+//           )}
+
+//           {/* ================================= */}
+//           {/* STEP 3 — NEW PASSWORD */}
+//           {/* ================================= */}
+//           {step === 3 && (
+//             <form onSubmit={handleResetPassword}>
+
+//               {/* Heading */}
+//               <h1 className="text-lg sm:text-xl font-semibold text-navy text-center">
+//                 Create new password
+//               </h1>
+
+//               <p className="text-xs sm:text-sm leading-5 text-navy/60 text-center mt-2 mb-5 sm:mb-6">
+//                 Choose a strong password for your account.
+//               </p>
+
+//               {/* New Password */}
+//               <div className="mb-4">
+
+//                 <label className="block text-xs sm:text-sm font-medium text-navy mb-1.5">
+//                   New Password
+//                 </label>
+
+//                 <div className="relative">
+
+//                   <input
+//                     type={showPassword ? "text" : "password"}
+//                     required
+//                     minLength={6}
+//                     maxLength={72}
+//                     autoComplete="new-password"
+//                     value={newPassword}
+//                     onChange={(e) =>
+//                       setNewPassword(e.target.value)
+//                     }
+//                     placeholder="••••••••"
+//                     className="
+//                       w-full
+//                       min-h-[44px]
+//                       px-3.5 sm:px-4
+//                       pr-11
+//                       py-2.5
+//                       rounded-lg
+//                       border border-navy/15
+//                       bg-white
+//                       outline-none
+//                       focus:border-secondary
+//                       focus:ring-2
+//                       focus:ring-secondary/10
+//                       text-sm
+//                       text-navy
+//                       transition
+//                     "
+//                   />
+
+//                   <button
+//                     type="button"
+//                     onClick={() =>
+//                       setShowPassword((prev) => !prev)
+//                     }
+//                     className="
+//                       absolute
+//                       right-2
+//                       sm:right-3
+//                       top-1/2
+//                       -translate-y-1/2
+//                       w-9
+//                       h-9
+//                       flex
+//                       items-center
+//                       justify-center
+//                       rounded-md
+//                       text-navy/50
+//                       hover:text-navy
+//                       hover:bg-navy/5
+//                       transition
+//                     "
+//                     aria-label={
+//                       showPassword
+//                         ? "Hide password"
+//                         : "Show password"
+//                     }
+//                   >
+//                     {showPassword ? (
+//                       <EyeOff size={18} />
+//                     ) : (
+//                       <Eye size={18} />
+//                     )}
+//                   </button>
+
+//                 </div>
+
+//               </div>
+
+//               {/* Confirm Password */}
+//               <div className="mb-4">
+
+//                 <label className="block text-xs sm:text-sm font-medium text-navy mb-1.5">
+//                   Confirm Password
+//                 </label>
+
+//                 <div className="relative">
+
+//                   <input
+//                     type={
+//                       showConfirmPassword
+//                         ? "text"
+//                         : "password"
+//                     }
+//                     required
+//                     minLength={6}
+//                     maxLength={72}
+//                     autoComplete="new-password"
+//                     value={confirmPassword}
+//                     onChange={(e) =>
+//                       setConfirmPassword(e.target.value)
+//                     }
+//                     placeholder="••••••••"
+//                     className="
+//                       w-full
+//                       min-h-[44px]
+//                       px-3.5 sm:px-4
+//                       pr-11
+//                       py-2.5
+//                       rounded-lg
+//                       border border-navy/15
+//                       bg-white
+//                       outline-none
+//                       focus:border-secondary
+//                       focus:ring-2
+//                       focus:ring-secondary/10
+//                       text-sm
+//                       text-navy
+//                       transition
+//                     "
+//                   />
+
+//                   <button
+//                     type="button"
+//                     onClick={() =>
+//                       setShowConfirmPassword(
+//                         (prev) => !prev
+//                       )
+//                     }
+//                     className="
+//                       absolute
+//                       right-2
+//                       sm:right-3
+//                       top-1/2
+//                       -translate-y-1/2
+//                       w-9
+//                       h-9
+//                       flex
+//                       items-center
+//                       justify-center
+//                       rounded-md
+//                       text-navy/50
+//                       hover:text-navy
+//                       hover:bg-navy/5
+//                       transition
+//                     "
+//                     aria-label={
+//                       showConfirmPassword
+//                         ? "Hide password"
+//                         : "Show password"
+//                     }
+//                   >
+//                     {showConfirmPassword ? (
+//                       <EyeOff size={18} />
+//                     ) : (
+//                       <Eye size={18} />
+//                     )}
+//                   </button>
+
+//                 </div>
+
+//               </div>
+
+//               {/* Password Hint */}
+//               <p className="text-[11px] sm:text-xs text-navy/45 mb-4">
+//                 Password must contain at least 6 characters.
+//               </p>
+
+//               {/* Error */}
+//               {error && (
+//                 <div className="mb-4 rounded-lg bg-red-50 border border-red-100 px-3 py-2.5">
+//                   <p className="text-xs sm:text-sm text-red-600 leading-5">
+//                     {error}
+//                   </p>
+//                 </div>
+//               )}
+
+//               {/* Reset */}
+//               <button
+//                 type="submit"
+//                 disabled={submitting}
+//                 className="
+//                   w-full
+//                   min-h-[44px]
+//                   px-4
+//                   py-2.5
+//                   rounded-lg
+//                   bg-navy
+//                   text-ivory
+//                   text-sm
+//                   font-semibold
+//                   hover:bg-navy-light
+//                   active:scale-[0.99]
+//                   transition
+//                   disabled:opacity-60
+//                   disabled:cursor-not-allowed
+//                 "
+//               >
+//                 {submitting
+//                   ? "Resetting password…"
+//                   : "Reset Password"}
+//               </button>
+
+//             </form>
+//           )}
+
+//           {/* ================================= */}
+//           {/* STEP 4 — SUCCESS */}
+//           {/* ================================= */}
+//           {step === 4 && (
+//             <div className="text-center">
+
+//               {/* Success Icon */}
+//               <div className="flex justify-center mb-4 sm:mb-5">
+
+//                 <div className="w-14 h-14 sm:w-16 sm:h-16 rounded-full bg-green-100 flex items-center justify-center">
+
+//                   <ShieldCheck
+//                     className="text-green-600"
+//                     size={28}
+//                   />
+
+//                 </div>
+
+//               </div>
+
+//               {/* Heading */}
+//               <h1 className="text-lg sm:text-xl font-semibold text-navy">
+//                 Password reset successful
+//               </h1>
+
+//               <p className="text-xs sm:text-sm leading-5 text-navy/60 mt-2 mb-5 sm:mb-6">
+//                 Your password has been updated successfully.
+//                 You can now sign in with your new password.
+//               </p>
+
+//               {/* Login */}
+//               <button
+//                 type="button"
+//                 onClick={handleBackToLogin}
+//                 className="
+//                   w-full
+//                   min-h-[44px]
+//                   px-4
+//                   py-2.5
+//                   rounded-lg
+//                   bg-navy
+//                   text-ivory
+//                   text-sm
+//                   font-semibold
+//                   hover:bg-navy-light
+//                   active:scale-[0.99]
+//                   transition
+//                 "
+//               >
+//                 Back to Login
+//               </button>
+
+//             </div>
+//           )}
+
+//         </div>
+
+//         {/* Small footer spacing */}
+//         <p className="text-center text-[10px] sm:text-xs text-ivory/30 mt-5">
+//           © Manyara Prive Vacations
+//         </p>
+
+//       </div>
+//     </div>
+//   );
+// }

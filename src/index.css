@@ -18,7 +18,7 @@ html {
 }
 
 body {
-  @apply bg-ivory text-navy font-body antialiased;
+  @apply bg-background text-text font-body antialiased;
   overflow-x: clip;
 }
 

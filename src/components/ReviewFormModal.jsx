@@ -1,15 +1,21 @@
 
-
 import { useEffect, useRef, useState } from "react";
+import { createPortal } from "react-dom";
 import {
+  AlertCircle,
+  CheckCircle2,
+  ChevronDown,
+  MessageSquareHeart,
+  Send,
   Star,
   X,
-  Send,
-  CheckCircle2,
-  MessageSquareHeart,
 } from "lucide-react";
 import { createTestimonial, getMostVisited } from "../api/content";
 import ImageUploadField from "./admin/ImageUploadField";
+
+// ============================================================
+// HELPERS
+// ============================================================
 
 function getSafeArray(value) {
   if (Array.isArray(value)) return value;
@@ -20,16 +26,14 @@ function getSafeArray(value) {
 }
 
 function getDestinationName(item) {
-  return (
-    item?.place_name ||
-    item?.destination ||
-    item?.name ||
-    item?.title ||
-    ""
-  )
+  return (item?.place_name || item?.destination || item?.name || item?.title || "")
     .toString()
     .trim();
 }
+
+// ============================================================
+// CONSTANTS
+// ============================================================
 
 const EMPTY_FORM = {
   customer_name: "",
@@ -39,32 +43,96 @@ const EMPTY_FORM = {
   review: "",
 };
 
-const INPUT_CLASSES =
-  "w-full rounded-xl border border-navy/15 bg-white px-4 py-3 text-sm text-navy outline-none transition placeholder:text-navy/35 focus:border-accent focus:ring-2 focus:ring-accent/10 disabled:cursor-not-allowed disabled:bg-surface";
-
-const FOCUSABLE =
-  'a[href], button:not([disabled]), input:not([disabled]):not(.sr-only), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])';
-
 const NAME_PATTERN = /^[A-Za-zÀ-ÿ.' -]+$/;
 const CITY_PATTERN = /^[A-Za-zÀ-ÿ.' -]+$/;
 
-export default function ReviewFormModal({
-  open,
-  onClose,
-  onSubmitted,
-}) {
+const FIELD_ORDER = ["customer_name", "customer_city", "destination", "rating", "review"];
+
+const RATING_LABELS = ["", "Poor", "Fair", "Good", "Very good", "Excellent"];
+
+const EXIT_MS = 300;
+
+const FOCUSABLE =
+  'a[href],button:not([disabled]),input:not([disabled]):not(.sr-only),select:not([disabled]),textarea:not([disabled]),[tabindex]:not([tabindex="-1"])';
+
+// ============================================================
+// THEME: rose / petal (same as EnquiryForm)
+// Every colour is a token from tailwind.config.js.
+// 16px text on inputs stops iOS Safari zooming in on focus.
+// ============================================================
+
+const INPUT_BASE =
+  "block w-full min-w-0 rounded-xl border bg-input px-4 text-base text-text-dark outline-none transition-all duration-200 placeholder:text-placeholder disabled:cursor-not-allowed disabled:bg-surface disabled:text-muted";
+
+const inputClass = (hasError, extra = "h-12") =>
+  `${INPUT_BASE} ${extra} ${
+    hasError
+      ? "border-error bg-error-bg/30 focus:border-error focus:ring-4 focus:ring-error/10"
+      : "border-border hover:border-border-strong focus:border-accent focus:ring-4 focus:ring-accent/10"
+  }`;
+
+const FOCUS_RING =
+  "focus:outline-none focus-visible:ring-2 focus-visible:ring-accent/40 focus-visible:ring-offset-2";
+
+const LABEL =
+  "mb-1.5 flex items-baseline gap-1 text-[11px] font-semibold uppercase tracking-[0.14em] text-ink-600";
+
+const PRIMARY_BUTTON =
+  "bg-accent text-white shadow-brand transition-all duration-300 hover:-translate-y-0.5 hover:bg-accent-hover hover:shadow-orange active:translate-y-0 active:scale-[0.99]";
+
+const OUTLINE_BUTTON =
+  "border border-border bg-card text-text-dark transition-colors hover:border-border-strong hover:bg-surface-soft";
+
+// Defined outside the modal so inputs keep focus while typing.
+function Field({ id, label, error, hint, children }) {
+  return (
+    <div>
+      <label htmlFor={id} className={LABEL}>
+        {label}
+        <span className="text-accent" aria-hidden="true">
+          *
+        </span>
+      </label>
+
+      {children}
+
+      {error ? (
+        <p
+          id={`${id}-error`}
+          role="alert"
+          className="mt-1.5 flex items-start gap-1.5 text-xs leading-relaxed text-error-text sm:text-sm"
+        >
+          <AlertCircle className="mt-0.5 h-3.5 w-3.5 shrink-0 sm:h-4 sm:w-4" aria-hidden="true" />
+          {error}
+        </p>
+      ) : hint ? (
+        <p id={`${id}-hint`} className="mt-1.5 text-xs leading-relaxed text-muted">
+          {hint}
+        </p>
+      ) : null}
+    </div>
+  );
+}
+
+// ============================================================
+// COMPONENT
+// ============================================================
+
+export default function ReviewFormModal({ open, onClose, onSubmitted }) {
+  const [mounted, setMounted] = useState(open);
+  const [shown, setShown] = useState(false);
+
   const [form, setForm] = useState(EMPTY_FORM);
   const [errors, setErrors] = useState({});
+  const [hoverRating, setHoverRating] = useState(0);
   const [image, setImage] = useState(null);
   const [imageUploading, setImageUploading] = useState(false);
 
   const [destinations, setDestinations] = useState([]);
-  const [destinationsLoading, setDestinationsLoading] =
-    useState(false);
-  const [destinationsError, setDestinationsError] =
-    useState("");
-  const [destinationsLoaded, setDestinationsLoaded] =
-    useState(false);
+  const [destinationsLoading, setDestinationsLoading] = useState(false);
+  const [destinationsError, setDestinationsError] = useState("");
+  const [destinationsLoaded, setDestinationsLoaded] = useState(false);
+  const [reloadKey, setReloadKey] = useState(0);
 
   const [submitting, setSubmitting] = useState(false);
   const [submitError, setSubmitError] = useState("");
@@ -79,72 +147,70 @@ export default function ReviewFormModal({
     onClose?.();
   };
 
-  /*
-   * =========================================================
-   * FIELD VALIDATION
-   * =========================================================
-   */
+  // Always points at the latest closeModal (used by the window Esc listener)
+  const closeRef = useRef(closeModal);
+  closeRef.current = closeModal;
+
+  // ==========================================================
+  // ENTER / EXIT TRANSITION (two-phase mount)
+  // ==========================================================
+
+  useEffect(() => {
+    if (open) {
+      setMounted(true);
+      let inner;
+      const outer = requestAnimationFrame(() => {
+        inner = requestAnimationFrame(() => setShown(true));
+      });
+      return () => {
+        cancelAnimationFrame(outer);
+        cancelAnimationFrame(inner);
+      };
+    }
+
+    setShown(false);
+    const timer = setTimeout(() => {
+      setMounted(false);
+      setSuccess(false);
+      setSubmitError("");
+      setErrors({});
+    }, EXIT_MS);
+
+    return () => clearTimeout(timer);
+  }, [open]);
+
+  // ==========================================================
+  // FIELD VALIDATION
+  // ==========================================================
 
   const validateField = (name, value) => {
-    const cleanValue =
-      typeof value === "string" ? value.trim() : value;
+    const cleanValue = typeof value === "string" ? value.trim() : value;
 
     switch (name) {
       case "customer_name":
-        if (!cleanValue) {
-          return "Please enter your name.";
-        }
-
-        if (cleanValue.length < 2) {
-          return "Name must contain at least 2 characters.";
-        }
-
-        if (cleanValue.length > 100) {
-          return "Name cannot exceed 100 characters.";
-        }
-
-        if (!NAME_PATTERN.test(cleanValue)) {
-          return "Please enter a valid name.";
-        }
-
+        if (!cleanValue) return "Please enter your name.";
+        if (cleanValue.length < 2) return "Name must contain at least 2 characters.";
+        if (cleanValue.length > 100) return "Name cannot exceed 100 characters.";
+        if (!NAME_PATTERN.test(cleanValue)) return "Please enter a valid name.";
         return "";
 
       case "customer_city":
-        if (!cleanValue) {
-          return "Please enter your city.";
-        }
-
-        if (cleanValue.length < 2) {
-          return "City must contain at least 2 characters.";
-        }
-
-        if (cleanValue.length > 100) {
-          return "City cannot exceed 100 characters.";
-        }
-
-        if (!CITY_PATTERN.test(cleanValue)) {
-          return "Please enter a valid city.";
-        }
-
+        if (!cleanValue) return "Please enter your city.";
+        if (cleanValue.length < 2) return "City must contain at least 2 characters.";
+        if (cleanValue.length > 100) return "City cannot exceed 100 characters.";
+        if (!CITY_PATTERN.test(cleanValue)) return "Please enter a valid city.";
         return "";
 
       case "destination":
-        if (!cleanValue) {
-          return "Please select the place you visited.";
-        }
+        if (!cleanValue) return "Please select the place you visited.";
 
         if (destinations.length > 0) {
           const exists = destinations.some(
             (destination) =>
-              destination.displayName.toLowerCase() ===
-              cleanValue.toLowerCase()
+              destination.displayName.toLowerCase() === cleanValue.toLowerCase(),
           );
-
-          if (!exists) {
-            return "Please select a valid destination.";
-          }
+          if (!exists) return "Please select a valid destination.";
         }
-
         return "";
 
       case "rating":
@@ -155,22 +221,12 @@ export default function ReviewFormModal({
         ) {
           return "Please select a rating between 1 and 5 stars.";
         }
-
         return "";
 
       case "review":
-        if (!cleanValue) {
-          return "Please write your review.";
-        }
-
-        if (cleanValue.length < 10) {
-          return "Review must contain at least 10 characters.";
-        }
-
-        if (cleanValue.length > 3000) {
-          return "Review cannot exceed 3000 characters.";
-        }
-
+        if (!cleanValue) return "Please write your review.";
+        if (cleanValue.length < 10) return "Review must contain at least 10 characters.";
+        if (cleanValue.length > 3000) return "Review cannot exceed 3000 characters.";
         return "";
 
       default:
@@ -178,92 +234,58 @@ export default function ReviewFormModal({
     }
   };
 
-  /*
-   * =========================================================
-   * VALIDATE ALL FIELDS
-   * =========================================================
-   */
-
   const validateForm = () => {
-    const fieldNames = [
-      "customer_name",
-      "customer_city",
-      "destination",
-      "rating",
-      "review",
-    ];
-
     const nextErrors = {};
 
-    fieldNames.forEach((fieldName) => {
-      const error = validateField(
-        fieldName,
-        form[fieldName]
-      );
-
-      if (error) {
-        nextErrors[fieldName] = error;
-      }
+    FIELD_ORDER.forEach((fieldName) => {
+      const error = validateField(fieldName, form[fieldName]);
+      if (error) nextErrors[fieldName] = error;
     });
 
     return nextErrors;
   };
 
-  /*
-   * =========================================================
-   * BODY SCROLL + FOCUS MANAGEMENT
-   * =========================================================
-   */
+  // ==========================================================
+  // BODY SCROLL LOCK + ESC + FOCUS MANAGEMENT
+  // ==========================================================
 
   useEffect(() => {
     if (!open) return;
 
-    previouslyFocusedRef.current =
-      document.activeElement;
+    previouslyFocusedRef.current = document.activeElement;
 
-    const previousOverflow =
-      document.body.style.overflow;
-
+    const previousOverflow = document.body.style.overflow;
     document.body.style.overflow = "hidden";
 
+    const onKey = (event) => {
+      if (event.key === "Escape") closeRef.current();
+    };
+    window.addEventListener("keydown", onKey);
+
     const timer = setTimeout(() => {
-      firstFieldRef.current?.focus();
-    }, 50);
+      // Phones: do not pop the keyboard open over the form.
+      const wide = window.matchMedia?.("(min-width: 640px)").matches;
+      (wide ? firstFieldRef.current : panelRef.current)?.focus({
+        preventScroll: true,
+      });
+    }, 80);
 
     return () => {
       clearTimeout(timer);
-
-      document.body.style.overflow =
-        previousOverflow;
-
+      window.removeEventListener("keydown", onKey);
+      document.body.style.overflow = previousOverflow;
       previouslyFocusedRef.current?.focus?.();
     };
   }, [open]);
 
-  /*
-   * =========================================================
-   * RESET TEMPORARY STATES WHEN MODAL CLOSES
-   * =========================================================
-   */
-
-  useEffect(() => {
-    if (!open) {
-      setSuccess(false);
-      setSubmitError("");
-      setErrors({});
-    }
-  }, [open]);
-
-  /*
-   * =========================================================
-   * LOAD DESTINATIONS
-   * =========================================================
-   */
+  // ==========================================================
+  // LOAD DESTINATIONS (with retry)
+  // ==========================================================
 
   useEffect(() => {
     if (!open || destinationsLoaded) return;
 
-    let mounted = true;
+    let active = true;
 
     const loadDestinations = async () => {
       try {
@@ -271,154 +293,97 @@ export default function ReviewFormModal({
         setDestinationsError("");
 
         const data = await getMostVisited();
-
-        if (!mounted) return;
+        if (!active) return;
 
         const validDestinations = getSafeArray(data)
-          .map((item) => ({
-            ...item,
-            displayName: getDestinationName(item),
-          }))
+          .map((item) => ({ ...item, displayName: getDestinationName(item) }))
           .filter((item) => item.displayName);
 
         const uniqueDestinations = Array.from(
           new Map(
-            validDestinations.map((item) => [
-              item.displayName.toLowerCase(),
-              item,
-            ])
-          ).values()
+            validDestinations.map((item) => [item.displayName.toLowerCase(), item]),
+          ).values(),
         );
 
         uniqueDestinations.sort(
-          (a, b) =>
-            Number(a?.display_order ?? 0) -
-            Number(b?.display_order ?? 0)
+          (a, b) => Number(a?.display_order ?? 0) - Number(b?.display_order ?? 0),
         );
 
         setDestinations(uniqueDestinations);
         setDestinationsLoaded(true);
       } catch (err) {
-        console.error(
-          "Failed to load destinations:",
-          err
-        );
-
-        if (!mounted) return;
+        console.error("Failed to load destinations:", err);
+        if (!active) return;
 
         setDestinations([]);
-        setDestinationsError(
-          "Unable to load destinations. Please try again."
-        );
+        setDestinationsError("Unable to load destinations.");
       } finally {
-        if (mounted) {
-          setDestinationsLoading(false);
-        }
+        if (active) setDestinationsLoading(false);
       }
     };
 
     loadDestinations();
 
     return () => {
-      mounted = false;
+      active = false;
     };
-  }, [open, destinationsLoaded]);
+  }, [open, destinationsLoaded, reloadKey]);
 
-  /*
-   * =========================================================
-   * KEYBOARD ACCESSIBILITY
-   * =========================================================
-   */
+  // ==========================================================
+  // KEYBOARD: focus trap
+  // ==========================================================
 
   const handleKeyDown = (event) => {
-    if (event.key === "Escape") {
-      event.stopPropagation();
-      closeModal();
-      return;
-    }
-
     if (event.key !== "Tab") return;
 
-    const focusable =
-      panelRef.current?.querySelectorAll(FOCUSABLE);
-
+    const focusable = panelRef.current?.querySelectorAll(FOCUSABLE);
     if (!focusable?.length) return;
 
     const first = focusable[0];
     const last = focusable[focusable.length - 1];
 
-    if (
-      event.shiftKey &&
-      document.activeElement === first
-    ) {
+    if (event.shiftKey && document.activeElement === first) {
       event.preventDefault();
       last.focus();
-    } else if (
-      !event.shiftKey &&
-      document.activeElement === last
-    ) {
+    } else if (!event.shiftKey && document.activeElement === last) {
       event.preventDefault();
       first.focus();
     }
   };
 
-  /*
-   * =========================================================
-   * HANDLE INPUT CHANGE
-   * =========================================================
-   */
+  // ==========================================================
+  // HANDLERS
+  // ==========================================================
 
   const handleChange = (event) => {
     const { name, value } = event.target;
 
-    setForm((previous) => ({
-      ...previous,
-      [name]: value,
-    }));
-
-    /*
-     * Validate ONLY the field being changed.
-     */
-    const fieldError = validateField(name, value);
-
-    setErrors((previous) => ({
-      ...previous,
-      [name]: fieldError,
-    }));
-
+    setForm((previous) => ({ ...previous, [name]: value }));
+    setErrors((previous) => ({ ...previous, [name]: validateField(name, value) }));
     setSubmitError("");
   };
-
-  /*
-   * =========================================================
-   * RATING
-   * =========================================================
-   */
 
   const handleRating = (rating) => {
-    setForm((previous) => ({
-      ...previous,
-      rating,
-    }));
-
-    const fieldError = validateField(
-      "rating",
-      rating
-    );
-
-    setErrors((previous) => ({
-      ...previous,
-      rating: fieldError,
-    }));
-
+    setForm((previous) => ({ ...previous, rating }));
+    setErrors((previous) => ({ ...previous, rating: validateField("rating", rating) }));
     setSubmitError("");
   };
 
-  /*
-   * =========================================================
-   * SUBMIT
-   * =========================================================
-   */
+  const handleBackdrop = () => {
+    // Never throw away a typed review because of a stray tap.
+    const isDirty =
+      !success &&
+      Boolean(form.customer_name.trim() || form.customer_city.trim() || form.review.trim());
+
+    if (isDirty) return;
+    closeModal();
+  };
+
+  const retryDestinations = () => {
+    setDestinationsError("");
+    setDestinationsLoaded(false);
+    setReloadKey((key) => key + 1);
+  };
 
   const handleSubmit = async (event) => {
     event.preventDefault();
@@ -428,32 +393,21 @@ export default function ReviewFormModal({
     setSubmitError("");
 
     if (imageUploading) {
-      setSubmitError(
-        "Please wait for your photo to finish uploading."
-      );
+      setSubmitError("Please wait for your photo to finish uploading.");
       return;
     }
 
-    /*
-     * Validate every field using the same switch-based
-     * field validation function.
-     */
     const validationErrors = validateForm();
-
     setErrors(validationErrors);
 
-    if (Object.keys(validationErrors).length > 0) {
-      const firstInvalidField =
-        Object.keys(validationErrors)[0];
+    const firstInvalid = FIELD_ORDER.find((field) => validationErrors[field]);
+
+    if (firstInvalid) {
+      setSubmitError("Please fix the highlighted fields.");
 
       requestAnimationFrame(() => {
-        document
-          .getElementById(
-            `modal_${firstInvalidField}`
-          )
-          ?.focus();
+        document.getElementById(`modal_${firstInvalid}`)?.focus();
       });
-
       return;
     }
 
@@ -476,454 +430,1197 @@ export default function ReviewFormModal({
 
       onSubmitted?.();
     } catch (err) {
-      console.error(
-        "Failed to submit testimonial:",
-        err
-      );
+      console.error("Failed to submit testimonial:", err);
 
-      const detail =
-        err?.response?.data?.detail;
+      const detail = err?.response?.data?.detail;
 
       setSubmitError(
         typeof detail === "string"
           ? detail
-          : "Unable to submit your review. Please try again."
+          : "Unable to submit your review. Please try again.",
       );
     } finally {
       setSubmitting(false);
     }
   };
 
-  if (!open) return null;
+  if (!mounted) return null;
 
   const submitDisabled =
-    submitting ||
-    imageUploading ||
-    destinationsLoading ||
-    destinations.length === 0;
+    submitting || imageUploading || destinationsLoading || destinations.length === 0;
 
-  return (
-    <div
-      className="fixed inset-0 z-[100] flex items-end justify-center bg-navy/60 p-0 backdrop-blur-sm sm:items-center sm:p-4 md:p-6"
-      onMouseDown={(event) => {
-        if (event.target === event.currentTarget) {
-          closeModal();
-        }
-      }}
+  const describedBy = (field) => (errors[field] ? `modal_${field}-error` : undefined);
+
+  const activeRating = hoverRating || form.rating;
+
+  const closeButton = (
+    <button
+      type="button"
+      onClick={closeModal}
+      disabled={submitting}
+      aria-label="Close review form"
+      className={`flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-surface text-muted hover:text-text-dark disabled:cursor-not-allowed disabled:opacity-50 ${OUTLINE_BUTTON} ${FOCUS_RING}`}
     >
+      <X className="h-[18px] w-[18px]" strokeWidth={2} aria-hidden="true" />
+    </button>
+  );
+
+  return createPortal(
+    <div className="fixed inset-0 z-[100]">
+      {/* Backdrop (ink + rose glow, same as EnquiryForm) */}
       <div
-        ref={panelRef}
-        role="dialog"
-        aria-modal="true"
-        aria-labelledby="review-modal-title"
-        onKeyDown={handleKeyDown}
-        className="relative flex max-h-[94dvh] w-full flex-col overflow-hidden rounded-t-3xl bg-white shadow-2xl sm:max-h-[92dvh] sm:max-w-xl sm:rounded-3xl"
-      >
-        <div className="flex shrink-0 items-start justify-between gap-4 border-b border-navy/10 px-5 py-4 sm:px-6 sm:py-5">
-          <div className="min-w-0">
-            <h2
-              id="review-modal-title"
-              className="font-display text-xl font-semibold leading-tight text-navy sm:text-2xl"
-            >
-              {success
-                ? "Thank you!"
-                : "Your Valuable Review"}
-            </h2>
+        onMouseDown={handleBackdrop}
+        aria-hidden="true"
+        className={`absolute inset-0 bg-ink/60 bg-[radial-gradient(ellipse_at_30%_0%,rgba(232,40,111,0.32),transparent_55%)] backdrop-blur-md transition-opacity duration-300 motion-reduce:transition-none ${
+          shown ? "opacity-100" : "opacity-0"
+        }`}
+      />
 
-            {!success && (
-              <p className="mt-1 text-sm leading-relaxed text-navy/60">
-                Tell future travellers about your trip.
-              </p>
-            )}
+      {/* Layout wrapper: clicks pass through to the backdrop */}
+      <div className="pointer-events-none absolute inset-0 flex items-end justify-center sm:items-center sm:p-4">
+        {/* Panel: bottom sheet on mobile, centered modal on sm+ */}
+        <div
+          ref={panelRef}
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby="review-modal-title"
+          tabIndex={-1}
+          onKeyDown={handleKeyDown}
+          className={`pointer-events-auto relative flex max-h-[94dvh] w-full max-w-xl flex-col overflow-hidden rounded-t-[28px] bg-petal-gradient font-body antialiased shadow-brand outline-none
+            transition-[transform,opacity] duration-300 ease-soft motion-reduce:transition-none
+            sm:max-h-[90dvh] sm:rounded-3xl
+            ${
+              shown
+                ? "translate-y-0 opacity-100 sm:scale-100"
+                : "translate-y-full opacity-100 sm:translate-y-3 sm:scale-[0.98] sm:opacity-0"
+            }`}
+        >
+          {/* Brand accent line */}
+          <div className="relative z-10 h-1 shrink-0 bg-orange-gradient" aria-hidden="true" />
+
+          {/* Background decoration: soft petal glows and a faint dot grid */}
+          <div className="pointer-events-none absolute inset-0 overflow-hidden" aria-hidden="true">
+            <div className="absolute -right-20 -top-20 h-64 w-64 rounded-full bg-[radial-gradient(circle,rgba(242,88,143,0.26),transparent_70%)]" />
+            <div className="absolute -bottom-24 -left-20 h-64 w-64 rounded-full bg-[radial-gradient(circle,rgba(200,19,94,0.12),transparent_70%)]" />
+            <div className="absolute inset-0 bg-[radial-gradient(rgba(200,19,94,0.10)_1px,transparent_1px)] [background-size:18px_18px] [mask-image:linear-gradient(to_bottom,black,transparent_45%)]" />
           </div>
 
-          <button
-            type="button"
-            onClick={closeModal}
-            disabled={submitting}
-            aria-label="Close review form"
-            className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full text-navy/60 transition hover:bg-surface hover:text-navy focus:outline-none focus:ring-2 focus:ring-accent/30 disabled:opacity-50 sm:h-10 sm:w-10"
-          >
-            <X
-              className="h-5 w-5"
-              aria-hidden="true"
-            />
-          </button>
-        </div>
+          {success ? (
+            /* ==================== SUCCESS ==================== */
+            <div className="relative flex min-h-0 flex-1 flex-col overflow-y-auto overscroll-contain px-5 pb-[max(1.25rem,env(safe-area-inset-bottom))] pt-4 sm:px-8 sm:pb-8">
+              <div className="flex justify-end">{closeButton}</div>
 
-        {success ? (
-          <div className="overflow-y-auto px-5 py-8 text-center sm:px-7 sm:py-10">
-            <div className="mx-auto flex h-16 w-16 items-center justify-center rounded-full bg-green-50">
-              <CheckCircle2
-                className="h-9 w-9 text-green-600"
-                aria-hidden="true"
-              />
-            </div>
-
-            <p className="mt-5 text-base font-medium text-navy/80">
-              Thank you for your valuable response!
-            </p>
-
-            <p className="mx-auto mt-2 max-w-sm text-sm leading-relaxed text-navy/60">
-              Your review has been submitted. Our team
-              will check it before publishing it on our
-              website.
-            </p>
-
-            <div className="mx-auto mt-5 max-w-xs rounded-xl border border-navy/10 bg-surface px-4 py-3">
-              <p className="text-xs text-navy/50">
-                Review status
-              </p>
-
-              <p className="mt-1 text-sm font-semibold text-navy">
-                Pending approval
-              </p>
-            </div>
-
-            <div className="mt-6 flex flex-col gap-3 sm:flex-row sm:justify-center">
-              <button
-                type="button"
-                onClick={() => {
-                  setSuccess(false);
-                  setSubmitError("");
-                  setErrors({});
-                }}
-                className="inline-flex items-center justify-center gap-2 rounded-xl border border-navy/15 px-5 py-3 text-sm font-semibold text-navy transition hover:bg-surface focus:outline-none focus:ring-2 focus:ring-accent/30"
+              <div
+                className="mx-auto flex w-full max-w-md flex-1 flex-col items-center py-4 text-center"
+                role="status"
               >
-                <MessageSquareHeart
-                  className="h-4 w-4"
-                  aria-hidden="true"
-                />
-                Write another review
-              </button>
+                <span className="flex h-16 w-16 items-center justify-center rounded-full bg-success-bg text-success ring-8 ring-success-bg/50">
+                  <CheckCircle2 className="h-8 w-8" aria-hidden="true" />
+                </span>
 
-              <button
-                type="button"
-                onClick={closeModal}
-                className="inline-flex items-center justify-center rounded-xl bg-accent px-5 py-3 text-sm font-semibold text-white transition hover:bg-accent-hover focus:outline-none focus:ring-2 focus:ring-accent/30"
-              >
-                Done
-              </button>
-            </div>
-          </div>
-        ) : (
-          <form
-            onSubmit={handleSubmit}
-            noValidate
-            className="flex min-h-0 flex-1 flex-col"
-          >
-            <div className="min-h-0 flex-1 overflow-y-auto px-5 py-5 sm:px-6 sm:py-6">
-              <div className="space-y-5">
-                <div className="grid gap-5 sm:grid-cols-2">
-                  <div>
-                    <label
-                      htmlFor="modal_customer_name"
-                      className="mb-1.5 block text-sm font-medium text-navy"
-                    >
-                      Your Name{" "}
-                      <span className="text-red-500">
-                        *
-                      </span>
-                    </label>
+                <p className="mt-5 text-[10px] font-semibold uppercase tracking-[0.22em] text-primary">
+                  Review received
+                </p>
 
-                    <input
-                      ref={firstFieldRef}
-                      id="modal_customer_name"
-                      name="customer_name"
-                      type="text"
-                      value={form.customer_name}
-                      onChange={handleChange}
-                      minLength={2}
-                      maxLength={100}
-                      placeholder="Enter your name"
-                      autoComplete="name"
-                      disabled={submitting}
-                      aria-invalid={
-                        !!errors.customer_name
-                      }
-                      className={`${INPUT_CLASSES} ${
-                        errors.customer_name
-                          ? "border-red-400 focus:border-red-500 focus:ring-red-100"
-                          : ""
-                      }`}
-                    />
+                <h2
+                  id="review-modal-title"
+                  className="mt-1.5 font-display text-4xl font-semibold leading-none text-text-display"
+                >
+                  Thank you!
+                </h2>
 
-                    {errors.customer_name && (
-                      <p className="mt-1.5 text-xs text-red-600">
-                        {errors.customer_name}
-                      </p>
-                    )}
-                  </div>
+                <p className="mt-3 text-[15px] leading-relaxed text-text-secondary">
+                  Thank you for sharing your travel experience. Our team will
+                  review it before it appears on the website.
+                </p>
 
-                  <div>
-                    <label
-                      htmlFor="modal_customer_city"
-                      className="mb-1.5 block text-sm font-medium text-navy"
-                    >
-                      Your City{" "}
-                      <span className="text-red-500">
-                        *
-                      </span>
-                    </label>
-
-                    <input
-                      id="modal_customer_city"
-                      name="customer_city"
-                      type="text"
-                      value={form.customer_city}
-                      onChange={handleChange}
-                      minLength={2}
-                      maxLength={100}
-                      placeholder="e.g. Hyderabad"
-                      autoComplete="address-level2"
-                      disabled={submitting}
-                      aria-invalid={
-                        !!errors.customer_city
-                      }
-                      className={`${INPUT_CLASSES} ${
-                        errors.customer_city
-                          ? "border-red-400 focus:border-red-500 focus:ring-red-100"
-                          : ""
-                      }`}
-                    />
-
-                    {errors.customer_city && (
-                      <p className="mt-1.5 text-xs text-red-600">
-                        {errors.customer_city}
-                      </p>
-                    )}
-                  </div>
-                </div>
-
-                <div>
-                  <label
-                    htmlFor="modal_destination"
-                    className="mb-1.5 block text-sm font-medium text-navy"
-                  >
-                    Place Visited{" "}
-                    <span className="text-red-500">
-                      *
-                    </span>
-                  </label>
-
-                  <select
-                    id="modal_destination"
-                    name="destination"
-                    value={form.destination}
-                    onChange={handleChange}
-                    disabled={
-                      submitting ||
-                      destinationsLoading
-                    }
-                    aria-invalid={
-                      !!errors.destination
-                    }
-                    className={`${INPUT_CLASSES} ${
-                      errors.destination
-                        ? "border-red-400 focus:border-red-500 focus:ring-red-100"
-                        : ""
-                    }`}
-                  >
-                    <option value="">
-                      {destinationsLoading
-                        ? "Loading destinations..."
-                        : "Select the place you visited"}
-                    </option>
-
-                    {!destinationsLoading &&
-                      destinations.map(
-                        (destination) => (
-                          <option
-                            key={
-                              destination?.id ||
-                              destination?.slug ||
-                              destination?.displayName
-                            }
-                            value={
-                              destination.displayName
-                            }
-                          >
-                            {destination.displayName}
-                          </option>
-                        )
-                      )}
-                  </select>
-
-                  {errors.destination && (
-                    <p className="mt-1.5 text-xs text-red-600">
-                      {errors.destination}
-                    </p>
-                  )}
-
-                  {!errors.destination &&
-                    destinationsError && (
-                      <p className="mt-1.5 text-xs text-red-600">
-                        {destinationsError}
-                      </p>
-                    )}
-                </div>
-
-                <div>
-                  <p className="mb-1.5 text-sm font-medium text-navy">
-                    Your Rating{" "}
-                    <span className="text-red-500">
-                      *
-                    </span>
+                <div className="mt-6 w-full rounded-2xl border border-primary/15 bg-white/80 p-4 text-left">
+                  <p className="text-[10px] font-semibold uppercase tracking-[0.16em] text-muted">
+                    Review status
                   </p>
-
-                  <div
-                    className="flex gap-1"
-                    role="radiogroup"
-                    aria-label="Choose your rating"
-                  >
-                    {[1, 2, 3, 4, 5].map(
-                      (rating) => (
-                        <button
-                          key={rating}
-                          type="button"
-                          onClick={() =>
-                            handleRating(rating)
-                          }
-                          disabled={submitting}
-                          aria-label={`Give ${rating} star${
-                            rating > 1 ? "s" : ""
-                          }`}
-                          aria-pressed={
-                            form.rating === rating
-                          }
-                          className="rounded-lg p-1 transition hover:bg-surface focus:outline-none focus:ring-2 focus:ring-accent/30 disabled:cursor-not-allowed"
-                        >
-                          <Star
-                            className={`h-8 w-8 sm:h-7 sm:w-7 ${
-                              rating <= form.rating
-                                ? "text-accent"
-                                : "text-navy/20"
-                            }`}
-                            fill={
-                              rating <= form.rating
-                                ? "currentColor"
-                                : "none"
-                            }
-                            strokeWidth={1.5}
-                          />
-                        </button>
-                      )
-                    )}
-                  </div>
-
-                  <p className="mt-1 text-xs text-navy/50">
-                    {form.rating} out of 5 stars
+                  <p className="mt-0.5 text-sm font-semibold text-text-dark">
+                    Pending approval
                   </p>
-
-                  {errors.rating && (
-                    <p className="mt-1.5 text-xs text-red-600">
-                      {errors.rating}
-                    </p>
-                  )}
                 </div>
 
-                <div>
-                  <label
-                    htmlFor="modal_review"
-                    className="mb-1.5 block text-sm font-medium text-navy"
+                <div className="mt-6 flex w-full flex-col-reverse gap-2.5 sm:flex-row sm:gap-3">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setSuccess(false);
+                      setSubmitError("");
+                      setErrors({});
+                    }}
+                    className={`inline-flex h-12 w-full items-center justify-center gap-2 rounded-xl px-5 text-[13px] font-semibold uppercase tracking-[0.16em] ${OUTLINE_BUTTON} ${FOCUS_RING}`}
                   >
-                    Your Review{" "}
-                    <span className="text-red-500">
-                      *
-                    </span>
-                  </label>
+                    <MessageSquareHeart className="h-[18px] w-[18px]" aria-hidden="true" />
+                    Write another
+                  </button>
 
-                  <textarea
-                    id="modal_review"
-                    name="review"
-                    value={form.review}
-                    onChange={handleChange}
-                    minLength={10}
-                    maxLength={3000}
-                    rows={5}
-                    placeholder="Tell us about your travel experience..."
-                    disabled={submitting}
-                    aria-invalid={!!errors.review}
-                    className={`${INPUT_CLASSES} resize-none ${
-                      errors.review
-                        ? "border-red-400 focus:border-red-500 focus:ring-red-100"
-                        : ""
-                    }`}
-                  />
-
-                  <div className="mt-1 flex items-center justify-between gap-3 text-xs text-navy/40">
-                    <span>
-                      Minimum 10 characters
-                    </span>
-
-                    <span>
-                      {form.review.length}/3000
-                    </span>
-                  </div>
-
-                  {errors.review && (
-                    <p className="mt-1.5 text-xs text-red-600">
-                      {errors.review}
-                    </p>
-                  )}
-                </div>
-
-                <div className="rounded-2xl border border-navy/10 bg-surface/30 p-4">
-                  <ImageUploadField
-                    value={image}
-                    onChange={setImage}
-                    onBusyChange={setImageUploading}
-                    uploadEndpoint="/uploads/review-image"
-                    disabled={submitting}
-                    label="Your Photo (Optional)"
-                  />
-
-                  <p className="mt-2 text-xs leading-relaxed text-navy/50">
-                    You can share a photo from your trip,
-                    but this is completely optional.
-                  </p>
+                  <button
+                    type="button"
+                    onClick={closeModal}
+                    className={`inline-flex h-12 w-full items-center justify-center rounded-xl px-6 text-[13px] font-semibold uppercase tracking-[0.16em] ${PRIMARY_BUTTON} ${FOCUS_RING}`}
+                  >
+                    Done
+                  </button>
                 </div>
               </div>
             </div>
+          ) : (
+            <>
+              {/* ==================== HEADER ==================== */}
+              <div className="relative shrink-0 border-b border-primary/10 bg-white/70 backdrop-blur-md">
+                {/* Mobile drag handle */}
+                <div className="flex justify-center pt-2.5 sm:hidden" aria-hidden="true">
+                  <span className="h-1 w-10 rounded-full bg-border" />
+                </div>
 
-            <div className="shrink-0 border-t border-navy/10 bg-white px-5 py-4 sm:px-6">
-              {submitError && (
-                <div
-                  className="mb-3 rounded-xl border border-red-200 bg-red-50 px-4 py-2.5"
-                  role="alert"
-                >
-                  <p className="text-sm leading-relaxed text-red-700">
-                    {submitError}
+                <div className="flex items-start gap-3 px-4 pb-4 pt-3 sm:px-6 sm:py-5">
+                  <span className="hidden h-11 w-11 shrink-0 items-center justify-center rounded-2xl bg-primary-lighter text-primary sm:flex">
+                    <MessageSquareHeart className="h-5 w-5" strokeWidth={1.75} aria-hidden="true" />
+                  </span>
+
+                  <div className="min-w-0 flex-1">
+                    <p className="text-[10px] font-semibold uppercase tracking-[0.22em] text-primary">
+                      Manyara Privé Vacations
+                    </p>
+                    <h2
+                      id="review-modal-title"
+                      className="mt-1 font-display text-[28px] font-semibold leading-[1.05] text-text-display sm:text-[32px]"
+                    >
+                      Share your experience
+                    </h2>
+                    <p className="mt-1.5 text-[13px] leading-relaxed text-text-secondary">
+                      Tell future travellers about your trip.
+                    </p>
+                  </div>
+
+                  {closeButton}
+                </div>
+              </div>
+
+              {/* ==================== FORM ==================== */}
+              <form
+                onSubmit={handleSubmit}
+                noValidate
+                className="relative flex min-h-0 flex-1 flex-col"
+              >
+                <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain px-4 py-5 sm:px-6">
+                  <div className="space-y-5">
+                    {/* Name + city */}
+                    <div className="grid gap-5 sm:grid-cols-2">
+                      <Field id="modal_customer_name" label="Your name" error={errors.customer_name}>
+                        <input
+                          ref={firstFieldRef}
+                          id="modal_customer_name"
+                          name="customer_name"
+                          type="text"
+                          value={form.customer_name}
+                          onChange={handleChange}
+                          maxLength={100}
+                          placeholder="Your name"
+                          autoComplete="name"
+                          autoCapitalize="words"
+                          enterKeyHint="next"
+                          disabled={submitting}
+                          aria-invalid={errors.customer_name ? "true" : undefined}
+                          aria-describedby={describedBy("customer_name")}
+                          className={inputClass(Boolean(errors.customer_name))}
+                        />
+                      </Field>
+
+                      <Field id="modal_customer_city" label="Your city" error={errors.customer_city}>
+                        <input
+                          id="modal_customer_city"
+                          name="customer_city"
+                          type="text"
+                          value={form.customer_city}
+                          onChange={handleChange}
+                          maxLength={100}
+                          placeholder="e.g. Hyderabad"
+                          autoComplete="address-level2"
+                          autoCapitalize="words"
+                          enterKeyHint="next"
+                          disabled={submitting}
+                          aria-invalid={errors.customer_city ? "true" : undefined}
+                          aria-describedby={describedBy("customer_city")}
+                          className={inputClass(Boolean(errors.customer_city))}
+                        />
+                      </Field>
+                    </div>
+
+                    {/* Destination */}
+                    <Field
+                      id="modal_destination"
+                      label="Place visited"
+                      error={errors.destination || destinationsError}
+                    >
+                      <div className="relative">
+                        <select
+                          id="modal_destination"
+                          name="destination"
+                          value={form.destination}
+                          onChange={handleChange}
+                          disabled={submitting || destinationsLoading}
+                          aria-invalid={errors.destination ? "true" : undefined}
+                          aria-describedby={describedBy("destination")}
+                          className={inputClass(
+                            Boolean(errors.destination),
+                            "h-12 cursor-pointer appearance-none pr-11",
+                          )}
+                        >
+                          <option value="">
+                            {destinationsLoading
+                              ? "Loading destinations..."
+                              : "Select the place you visited"}
+                          </option>
+
+                          {!destinationsLoading &&
+                            destinations.map((destination) => (
+                              <option
+                                key={destination?.id || destination?.slug || destination?.displayName}
+                                value={destination.displayName}
+                              >
+                                {destination.displayName}
+                              </option>
+                            ))}
+                        </select>
+
+                        <ChevronDown
+                          className="pointer-events-none absolute right-3.5 top-1/2 h-5 w-5 -translate-y-1/2 text-primary"
+                          aria-hidden="true"
+                        />
+                      </div>
+
+                      {destinationsError && !destinationsLoading && (
+                        <button
+                          type="button"
+                          onClick={retryDestinations}
+                          className="mt-1 text-xs font-semibold text-link underline underline-offset-2 hover:text-link-hover"
+                        >
+                          Try again
+                        </button>
+                      )}
+                    </Field>
+
+                    {/* Rating */}
+                    <div>
+                      <p className={LABEL}>
+                        Your rating
+                        <span className="text-accent" aria-hidden="true">
+                          *
+                        </span>
+                      </p>
+
+                      <div className="flex items-center gap-3">
+                        <div
+                          className="-ml-1.5 flex gap-0.5"
+                          role="radiogroup"
+                          aria-label="Choose your rating"
+                          onMouseLeave={() => setHoverRating(0)}
+                        >
+                          {[1, 2, 3, 4, 5].map((rating) => (
+                            <button
+                              key={rating}
+                              type="button"
+                              onClick={() => handleRating(rating)}
+                              onMouseEnter={() => setHoverRating(rating)}
+                              disabled={submitting}
+                              aria-label={`Give ${rating} star${rating > 1 ? "s" : ""}`}
+                              aria-pressed={form.rating === rating}
+                              className="rounded-xl p-1.5 transition-all duration-150 hover:scale-110 hover:bg-white/80 focus:outline-none focus-visible:ring-2 focus-visible:ring-accent/30 disabled:cursor-not-allowed"
+                            >
+                              <Star
+                                className={`h-8 w-8 transition-colors duration-150 ${
+                                  rating <= activeRating ? "text-accent-bright" : "text-border"
+                                }`}
+                                fill={rating <= activeRating ? "currentColor" : "none"}
+                                strokeWidth={1.5}
+                                aria-hidden="true"
+                              />
+                            </button>
+                          ))}
+                        </div>
+
+                        <span
+                          className="font-display text-lg font-semibold italic text-primary"
+                          aria-live="polite"
+                        >
+                          {RATING_LABELS[activeRating]}
+                        </span>
+                      </div>
+
+                      {errors.rating && (
+                        <p role="alert" className="mt-1.5 flex items-start gap-1.5 text-xs text-error-text sm:text-sm">
+                          <AlertCircle className="mt-0.5 h-3.5 w-3.5 shrink-0 sm:h-4 sm:w-4" aria-hidden="true" />
+                          {errors.rating}
+                        </p>
+                      )}
+                    </div>
+
+                    {/* Review */}
+                    <Field id="modal_review" label="Your review" error={errors.review}>
+                      <textarea
+                        id="modal_review"
+                        name="review"
+                        value={form.review}
+                        onChange={handleChange}
+                        maxLength={3000}
+                        rows={5}
+                        placeholder="Tell us about your travel experience..."
+                        disabled={submitting}
+                        aria-invalid={errors.review ? "true" : undefined}
+                        aria-describedby={describedBy("review")}
+                        className={inputClass(Boolean(errors.review), "min-h-[120px] resize-y py-3")}
+                      />
+
+                      <div className="mt-1.5 flex items-center justify-between gap-3 text-xs text-muted">
+                        <span>Minimum 10 characters</span>
+                        <span>{form.review.length}/3000</span>
+                      </div>
+                    </Field>
+
+                    {/* Image */}
+                    <div className="rounded-2xl border border-primary/15 bg-white/80 p-4 shadow-travel-card backdrop-blur">
+                      <ImageUploadField
+                        value={image}
+                        onChange={setImage}
+                        onBusyChange={setImageUploading}
+                        uploadEndpoint="/uploads/review-image"
+                        disabled={submitting}
+                        label="Your photo (optional)"
+                      />
+
+                      <p className="mt-2 text-xs leading-relaxed text-muted">
+                        Add a photo from your trip if you like. It is completely optional.
+                      </p>
+                    </div>
+                  </div>
+                </div>
+
+                {/* ==================== STICKY FOOTER ==================== */}
+                <div className="shrink-0 border-t border-primary/10 bg-white/90 px-4 pb-[max(0.875rem,env(safe-area-inset-bottom))] pt-3 backdrop-blur-md sm:px-6 sm:pb-5 sm:pt-4">
+                  {submitError && (
+                    <div
+                      className="mb-3 flex items-start gap-2 rounded-xl border border-error/20 bg-error-bg px-3 py-2.5 text-sm leading-relaxed text-error-text"
+                      role="alert"
+                    >
+                      <AlertCircle className="mt-0.5 h-4 w-4 shrink-0" aria-hidden="true" />
+                      <span>{submitError}</span>
+                    </div>
+                  )}
+
+                  <button
+                    type="submit"
+                    disabled={submitDisabled}
+                    aria-busy={submitting}
+                    className={`inline-flex h-12 w-full items-center justify-center gap-2 rounded-xl px-6 text-[13px] font-semibold uppercase tracking-[0.16em] disabled:cursor-not-allowed disabled:opacity-70 disabled:hover:translate-y-0 disabled:active:scale-100 ${PRIMARY_BUTTON} ${FOCUS_RING}`}
+                  >
+                    <Send className="h-[17px] w-[17px]" aria-hidden="true" />
+                    {submitting
+                      ? "Submitting..."
+                      : imageUploading
+                        ? "Uploading photo..."
+                        : "Submit review"}
+                  </button>
+
+                  <p className="mt-2.5 text-center text-xs leading-relaxed text-muted">
+                    Your review is published after our team has checked it.
                   </p>
                 </div>
-              )}
-
-              <button
-                type="submit"
-                disabled={submitDisabled}
-                className="inline-flex w-full items-center justify-center gap-2 rounded-xl bg-accent px-5 py-3 text-sm font-semibold text-white transition hover:bg-accent-hover focus:outline-none focus:ring-2 focus:ring-accent/30 disabled:cursor-not-allowed disabled:opacity-60"
-              >
-                <Send
-                  className="h-4 w-4"
-                  aria-hidden="true"
-                />
-
-                {submitting
-                  ? "Submitting..."
-                  : imageUploading
-                  ? "Uploading photo..."
-                  : "Submit Your Review"}
-              </button>
-
-              <p className="mt-2 text-center text-xs leading-relaxed text-navy/50">
-                Your review will be published after our
-                team reviews it.
-              </p>
-            </div>
-          </form>
-        )}
+              </form>
+            </>
+          )}
+        </div>
       </div>
-    </div>
+    </div>,
+    document.body,
   );
 }
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+// import { useEffect, useRef, useState } from "react";
+// import {
+//   AlertCircle,
+//   CheckCircle2,
+//   MessageSquareHeart,
+//   Send,
+//   Star,
+//   X,
+// } from "lucide-react";
+// import { createTestimonial, getMostVisited } from "../api/content";
+// import ImageUploadField from "./admin/ImageUploadField";
+
+// // ============================================================
+// // HELPERS
+// // ============================================================
+
+// function getSafeArray(value) {
+//   if (Array.isArray(value)) return value;
+//   if (Array.isArray(value?.items)) return value.items;
+//   if (Array.isArray(value?.data)) return value.data;
+//   if (Array.isArray(value?.results)) return value.results;
+//   return [];
+// }
+
+// function getDestinationName(item) {
+//   return (item?.place_name || item?.destination || item?.name || item?.title || "")
+//     .toString()
+//     .trim();
+// }
+
+// // ============================================================
+// // FORM
+// // ============================================================
+
+// const EMPTY_FORM = {
+//   customer_name: "",
+//   customer_city: "",
+//   destination: "",
+//   rating: 5,
+//   review: "",
+// };
+
+// const NAME_PATTERN = /^[A-Za-zÀ-ÿ.' -]+$/;
+// const CITY_PATTERN = /^[A-Za-zÀ-ÿ.' -]+$/;
+
+// const FIELD_ORDER = [
+//   "customer_name",
+//   "customer_city",
+//   "destination",
+//   "rating",
+//   "review",
+// ];
+
+// const FOCUSABLE =
+//   'a[href],button:not([disabled]),input:not([disabled]):not(.sr-only),select:not([disabled]),textarea:not([disabled]),[tabindex]:not([tabindex="-1"])';
+
+// // ============================================================
+// // THEME CLASSES (Tailwind tokens from tailwind.config.js)
+// // 16px text on inputs stops iOS Safari zooming in on focus.
+// // ============================================================
+
+// const INPUT_BASE =
+//   "block w-full min-w-0 rounded-xl border bg-input px-4 text-base text-text-dark outline-none transition-colors duration-200 placeholder:text-placeholder disabled:cursor-not-allowed disabled:bg-surface disabled:text-muted";
+
+// const inputClass = (hasError, extra = "h-12") =>
+//   `${INPUT_BASE} ${extra} ${
+//     hasError
+//       ? "border-error bg-error-bg/30 focus:border-error focus:ring-2 focus:ring-error/15"
+//       : "border-border hover:border-border-strong focus:border-accent focus:ring-2 focus:ring-accent/15"
+//   }`;
+
+// const FOCUS_RING =
+//   "focus:outline-none focus-visible:ring-2 focus-visible:ring-accent/40 focus-visible:ring-offset-2";
+
+// // Defined outside the modal so inputs keep focus while typing.
+// function Field({ id, label, error, hint, children }) {
+//   return (
+//     <div>
+//       <label
+//         htmlFor={id}
+//         className="mb-1.5 flex items-baseline gap-1 text-sm font-semibold text-text-dark"
+//       >
+//         {label}
+//         <span className="text-accent" aria-hidden="true">
+//           *
+//         </span>
+//       </label>
+
+//       {children}
+
+//       {error ? (
+//         <p
+//           id={`${id}-error`}
+//           role="alert"
+//           className="mt-1.5 flex items-start gap-1.5 text-xs leading-relaxed text-error-text sm:text-sm"
+//         >
+//           <AlertCircle className="mt-0.5 h-3.5 w-3.5 shrink-0 sm:h-4 sm:w-4" aria-hidden="true" />
+//           {error}
+//         </p>
+//       ) : hint ? (
+//         <p id={`${id}-hint`} className="mt-1.5 text-xs leading-relaxed text-muted">
+//           {hint}
+//         </p>
+//       ) : null}
+//     </div>
+//   );
+// }
+
+// // ============================================================
+// // COMPONENT
+// // ============================================================
+
+// export default function ReviewFormModal({ open, onClose, onSubmitted }) {
+//   const [form, setForm] = useState(EMPTY_FORM);
+//   const [errors, setErrors] = useState({});
+//   const [image, setImage] = useState(null);
+//   const [imageUploading, setImageUploading] = useState(false);
+
+//   const [destinations, setDestinations] = useState([]);
+//   const [destinationsLoading, setDestinationsLoading] = useState(false);
+//   const [destinationsError, setDestinationsError] = useState("");
+//   const [destinationsLoaded, setDestinationsLoaded] = useState(false);
+
+//   const [submitting, setSubmitting] = useState(false);
+//   const [submitError, setSubmitError] = useState("");
+//   const [success, setSuccess] = useState(false);
+
+//   const panelRef = useRef(null);
+//   const firstFieldRef = useRef(null);
+//   const previouslyFocusedRef = useRef(null);
+
+//   const closeModal = () => {
+//     if (submitting) return;
+//     onClose?.();
+//   };
+
+//   // ==========================================================
+//   // FIELD VALIDATION
+//   // ==========================================================
+
+//   const validateField = (name, value) => {
+//     const cleanValue = typeof value === "string" ? value.trim() : value;
+
+//     switch (name) {
+//       case "customer_name":
+//         if (!cleanValue) return "Please enter your name.";
+//         if (cleanValue.length < 2) return "Name must contain at least 2 characters.";
+//         if (cleanValue.length > 100) return "Name cannot exceed 100 characters.";
+//         if (!NAME_PATTERN.test(cleanValue)) return "Please enter a valid name.";
+//         return "";
+
+//       case "customer_city":
+//         if (!cleanValue) return "Please enter your city.";
+//         if (cleanValue.length < 2) return "City must contain at least 2 characters.";
+//         if (cleanValue.length > 100) return "City cannot exceed 100 characters.";
+//         if (!CITY_PATTERN.test(cleanValue)) return "Please enter a valid city.";
+//         return "";
+
+//       case "destination":
+//         if (!cleanValue) return "Please select the place you visited.";
+
+//         if (destinations.length > 0) {
+//           const exists = destinations.some(
+//             (destination) =>
+//               destination.displayName.toLowerCase() === cleanValue.toLowerCase(),
+//           );
+//           if (!exists) return "Please select a valid destination.";
+//         }
+//         return "";
+
+//       case "rating":
+//         if (
+//           !Number.isInteger(Number(value)) ||
+//           Number(value) < 1 ||
+//           Number(value) > 5
+//         ) {
+//           return "Please select a rating between 1 and 5 stars.";
+//         }
+//         return "";
+
+//       case "review":
+//         if (!cleanValue) return "Please write your review.";
+//         if (cleanValue.length < 10) return "Review must contain at least 10 characters.";
+//         if (cleanValue.length > 3000) return "Review cannot exceed 3000 characters.";
+//         return "";
+
+//       default:
+//         return "";
+//     }
+//   };
+
+//   const validateForm = () => {
+//     const nextErrors = {};
+
+//     FIELD_ORDER.forEach((fieldName) => {
+//       const error = validateField(fieldName, form[fieldName]);
+//       if (error) nextErrors[fieldName] = error;
+//     });
+
+//     return nextErrors;
+//   };
+
+//   // ==========================================================
+//   // BODY SCROLL + FOCUS MANAGEMENT
+//   // ==========================================================
+
+//   useEffect(() => {
+//     if (!open) return;
+
+//     previouslyFocusedRef.current = document.activeElement;
+
+//     const previousOverflow = document.body.style.overflow;
+//     document.body.style.overflow = "hidden";
+
+//     const timer = setTimeout(() => {
+//       // Phones: do not pop the keyboard open over the form.
+//       const wide = window.matchMedia?.("(min-width: 640px)").matches;
+//       (wide ? firstFieldRef.current : panelRef.current)?.focus({
+//         preventScroll: true,
+//       });
+//     }, 50);
+
+//     return () => {
+//       clearTimeout(timer);
+//       document.body.style.overflow = previousOverflow;
+//       previouslyFocusedRef.current?.focus?.();
+//     };
+//   }, [open]);
+
+//   useEffect(() => {
+//     if (!open) {
+//       setSuccess(false);
+//       setSubmitError("");
+//       setErrors({});
+//     }
+//   }, [open]);
+
+//   // ==========================================================
+//   // LOAD DESTINATIONS
+//   // ==========================================================
+
+//   useEffect(() => {
+//     if (!open || destinationsLoaded) return;
+
+//     let mounted = true;
+
+//     const loadDestinations = async () => {
+//       try {
+//         setDestinationsLoading(true);
+//         setDestinationsError("");
+
+//         const data = await getMostVisited();
+//         if (!mounted) return;
+
+//         const validDestinations = getSafeArray(data)
+//           .map((item) => ({ ...item, displayName: getDestinationName(item) }))
+//           .filter((item) => item.displayName);
+
+//         const uniqueDestinations = Array.from(
+//           new Map(
+//             validDestinations.map((item) => [item.displayName.toLowerCase(), item]),
+//           ).values(),
+//         );
+
+//         uniqueDestinations.sort(
+//           (a, b) => Number(a?.display_order ?? 0) - Number(b?.display_order ?? 0),
+//         );
+
+//         setDestinations(uniqueDestinations);
+//         setDestinationsLoaded(true);
+//       } catch (err) {
+//         console.error("Failed to load destinations:", err);
+//         if (!mounted) return;
+
+//         setDestinations([]);
+//         setDestinationsError("Unable to load destinations. Please try again.");
+//       } finally {
+//         if (mounted) setDestinationsLoading(false);
+//       }
+//     };
+
+//     loadDestinations();
+
+//     return () => {
+//       mounted = false;
+//     };
+//   }, [open, destinationsLoaded]);
+
+//   // ==========================================================
+//   // KEYBOARD ACCESSIBILITY
+//   // ==========================================================
+
+//   const handleKeyDown = (event) => {
+//     if (event.key === "Escape") {
+//       event.stopPropagation();
+//       closeModal();
+//       return;
+//     }
+
+//     if (event.key !== "Tab") return;
+
+//     const focusable = panelRef.current?.querySelectorAll(FOCUSABLE);
+//     if (!focusable?.length) return;
+
+//     const first = focusable[0];
+//     const last = focusable[focusable.length - 1];
+
+//     if (event.shiftKey && document.activeElement === first) {
+//       event.preventDefault();
+//       last.focus();
+//     } else if (!event.shiftKey && document.activeElement === last) {
+//       event.preventDefault();
+//       first.focus();
+//     }
+//   };
+
+//   // ==========================================================
+//   // HANDLERS
+//   // ==========================================================
+
+//   const handleChange = (event) => {
+//     const { name, value } = event.target;
+
+//     setForm((previous) => ({ ...previous, [name]: value }));
+//     setErrors((previous) => ({ ...previous, [name]: validateField(name, value) }));
+//     setSubmitError("");
+//   };
+
+//   const handleRating = (rating) => {
+//     setForm((previous) => ({ ...previous, rating }));
+//     setErrors((previous) => ({ ...previous, rating: validateField("rating", rating) }));
+//     setSubmitError("");
+//   };
+
+//   const handleBackdrop = (event) => {
+//     // Never throw away a typed review because of a stray tap.
+//     const isDirty =
+//       !success &&
+//       Boolean(form.customer_name.trim() || form.customer_city.trim() || form.review.trim());
+
+//     if (event.target !== event.currentTarget || isDirty) return;
+//     closeModal();
+//   };
+
+//   const handleSubmit = async (event) => {
+//     event.preventDefault();
+
+//     if (submitting) return;
+
+//     setSubmitError("");
+
+//     if (imageUploading) {
+//       setSubmitError("Please wait for your photo to finish uploading.");
+//       return;
+//     }
+
+//     const validationErrors = validateForm();
+//     setErrors(validationErrors);
+
+//     const firstInvalid = FIELD_ORDER.find((field) => validationErrors[field]);
+
+//     if (firstInvalid) {
+//       setSubmitError("Please fix the highlighted fields.");
+
+//       requestAnimationFrame(() => {
+//         document.getElementById(`modal_${firstInvalid}`)?.focus();
+//       });
+//       return;
+//     }
+
+//     setSubmitting(true);
+
+//     try {
+//       await createTestimonial({
+//         customer_name: form.customer_name.trim(),
+//         customer_city: form.customer_city.trim(),
+//         destination: form.destination.trim(),
+//         rating: Number(form.rating),
+//         review: form.review.trim(),
+//         image: image || null,
+//       });
+
+//       setSuccess(true);
+//       setForm(EMPTY_FORM);
+//       setErrors({});
+//       setImage(null);
+
+//       onSubmitted?.();
+//     } catch (err) {
+//       console.error("Failed to submit testimonial:", err);
+
+//       const detail = err?.response?.data?.detail;
+
+//       setSubmitError(
+//         typeof detail === "string"
+//           ? detail
+//           : "Unable to submit your review. Please try again.",
+//       );
+//     } finally {
+//       setSubmitting(false);
+//     }
+//   };
+
+//   if (!open) return null;
+
+//   const submitDisabled =
+//     submitting || imageUploading || destinationsLoading || destinations.length === 0;
+
+//   const describedBy = (field) => (errors[field] ? `modal_${field}-error` : undefined);
+
+//   const closeButton = (
+//     <button
+//       type="button"
+//       onClick={closeModal}
+//       disabled={submitting}
+//       aria-label="Close review form"
+//       className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full border border-border bg-surface text-muted transition-colors hover:border-border-strong hover:bg-surface-soft hover:text-text-dark focus:outline-none focus-visible:ring-2 focus-visible:ring-accent/30 disabled:cursor-not-allowed disabled:opacity-50"
+//     >
+//       <X className="h-[19px] w-[19px]" strokeWidth={2} aria-hidden="true" />
+//     </button>
+//   );
+
+//   return (
+//     <div
+//       className="fixed inset-0 z-[100] flex items-end justify-center bg-ink/60 bg-[radial-gradient(ellipse_at_30%_0%,rgba(232,40,111,0.32),transparent_55%)] backdrop-blur-md sm:items-center sm:p-4"
+//       onMouseDown={handleBackdrop}
+//     >
+//       <div
+//         ref={panelRef}
+//         role="dialog"
+//         aria-modal="true"
+//         aria-labelledby="review-modal-title"
+//         tabIndex={-1}
+//         onKeyDown={handleKeyDown}
+//         className="relative flex max-h-[94dvh] w-full flex-col overflow-hidden rounded-t-3xl bg-petal-gradient shadow-brand outline-none sm:max-h-[90dvh] sm:max-w-xl sm:rounded-3xl"
+//       >
+//         <div className="relative z-10 h-1 shrink-0 bg-orange-gradient" aria-hidden="true" />
+
+//         {/* Background decoration: soft petal glows behind the content */}
+//         <div className="pointer-events-none absolute inset-0 overflow-hidden" aria-hidden="true">
+//           <div className="absolute -right-20 -top-20 h-64 w-64 rounded-full bg-[radial-gradient(circle,rgba(242,88,143,0.26),transparent_70%)]" />
+//           <div className="absolute -bottom-24 -left-20 h-64 w-64 rounded-full bg-[radial-gradient(circle,rgba(200,19,94,0.12),transparent_70%)]" />
+//         </div>
+
+//         {success ? (
+//           /* ==================== SUCCESS ==================== */
+//           <div className="relative flex min-h-0 flex-1 flex-col overflow-y-auto overscroll-contain px-5 pb-[max(1.25rem,env(safe-area-inset-bottom))] pt-4 sm:px-8 sm:pb-8">
+//             <div className="flex justify-end">{closeButton}</div>
+
+//             <div
+//               className="mx-auto flex w-full max-w-md flex-1 flex-col items-center py-4 text-center"
+//               role="status"
+//             >
+//               <span className="flex h-16 w-16 items-center justify-center rounded-full bg-success-bg text-success ring-8 ring-success-bg/50">
+//                 <CheckCircle2 className="h-8 w-8" aria-hidden="true" />
+//               </span>
+
+//               <h2
+//                 id="review-modal-title"
+//                 className="mt-5 font-display text-3xl font-semibold text-text-dark"
+//               >
+//                 Thank you!
+//               </h2>
+
+//               <p className="mt-2 text-[15px] leading-relaxed text-text-secondary">
+//                 Thank you for sharing your travel experience. Our team will
+//                 review it before it appears on the website.
+//               </p>
+
+//               <div className="mt-6 w-full rounded-2xl border border-primary/15 bg-white/80 p-4 text-left">
+//                 <p className="text-xs text-muted">Review status</p>
+//                 <p className="mt-0.5 text-sm font-semibold text-text-dark">
+//                   Pending approval
+//                 </p>
+//               </div>
+
+//               <div className="mt-6 flex w-full flex-col-reverse gap-2.5 sm:flex-row sm:gap-3">
+//                 <button
+//                   type="button"
+//                   onClick={() => {
+//                     setSuccess(false);
+//                     setSubmitError("");
+//                     setErrors({});
+//                   }}
+//                   className="inline-flex h-12 w-full items-center justify-center gap-2 rounded-xl border border-border bg-card px-5 text-base font-semibold text-text-dark transition-colors hover:border-border-strong hover:bg-surface-soft focus:outline-none focus-visible:ring-2 focus-visible:ring-accent/30"
+//                 >
+//                   <MessageSquareHeart className="h-[18px] w-[18px]" aria-hidden="true" />
+//                   Write another
+//                 </button>
+
+//                 <button
+//                   type="button"
+//                   onClick={closeModal}
+//                   className={`inline-flex h-12 w-full items-center justify-center rounded-xl bg-accent px-6 text-base font-semibold text-white shadow-brand transition-colors hover:bg-accent-hover ${FOCUS_RING}`}
+//                 >
+//                   Done
+//                 </button>
+//               </div>
+//             </div>
+//           </div>
+//         ) : (
+//           <>
+//             {/* ==================== HEADER ==================== */}
+//             <div className="relative flex shrink-0 items-start gap-3 border-b border-primary/10 bg-white/70 px-4 py-4 backdrop-blur-md sm:px-6 sm:py-5">
+//               <span className="hidden h-11 w-11 shrink-0 items-center justify-center rounded-2xl bg-primary-lighter text-primary sm:flex">
+//                 <MessageSquareHeart className="h-5 w-5" aria-hidden="true" />
+//               </span>
+
+//               <div className="min-w-0 flex-1">
+//                 <h2
+//                   id="review-modal-title"
+//                   className="font-display text-2xl font-semibold leading-tight text-text-dark sm:text-[1.75rem]"
+//                 >
+//                   Share your experience
+//                 </h2>
+//                 <p className="mt-1 text-sm leading-relaxed text-muted">
+//                   Tell future travellers about your trip.
+//                 </p>
+//               </div>
+
+//               {closeButton}
+//             </div>
+
+//             {/* ==================== FORM ==================== */}
+//             <form
+//               onSubmit={handleSubmit}
+//               noValidate
+//               className="relative flex min-h-0 flex-1 flex-col"
+//             >
+//               <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain px-4 py-5 sm:px-6">
+//                 <div className="space-y-5">
+//                   {/* Name + city */}
+//                   <div className="grid gap-5 sm:grid-cols-2">
+//                     <Field id="modal_customer_name" label="Your name" error={errors.customer_name}>
+//                       <input
+//                         ref={firstFieldRef}
+//                         id="modal_customer_name"
+//                         name="customer_name"
+//                         type="text"
+//                         value={form.customer_name}
+//                         onChange={handleChange}
+//                         maxLength={100}
+//                         placeholder="Your name"
+//                         autoComplete="name"
+//                         autoCapitalize="words"
+//                         enterKeyHint="next"
+//                         disabled={submitting}
+//                         aria-invalid={errors.customer_name ? "true" : undefined}
+//                         aria-describedby={describedBy("customer_name")}
+//                         className={inputClass(Boolean(errors.customer_name))}
+//                       />
+//                     </Field>
+
+//                     <Field id="modal_customer_city" label="Your city" error={errors.customer_city}>
+//                       <input
+//                         id="modal_customer_city"
+//                         name="customer_city"
+//                         type="text"
+//                         value={form.customer_city}
+//                         onChange={handleChange}
+//                         maxLength={100}
+//                         placeholder="e.g. Hyderabad"
+//                         autoComplete="address-level2"
+//                         autoCapitalize="words"
+//                         enterKeyHint="next"
+//                         disabled={submitting}
+//                         aria-invalid={errors.customer_city ? "true" : undefined}
+//                         aria-describedby={describedBy("customer_city")}
+//                         className={inputClass(Boolean(errors.customer_city))}
+//                       />
+//                     </Field>
+//                   </div>
+
+//                   {/* Destination */}
+//                   <Field
+//                     id="modal_destination"
+//                     label="Place visited"
+//                     error={errors.destination || destinationsError}
+//                   >
+//                     <select
+//                       id="modal_destination"
+//                       name="destination"
+//                       value={form.destination}
+//                       onChange={handleChange}
+//                       disabled={submitting || destinationsLoading}
+//                       aria-invalid={errors.destination ? "true" : undefined}
+//                       aria-describedby={describedBy("destination")}
+//                       className={inputClass(Boolean(errors.destination))}
+//                     >
+//                       <option value="">
+//                         {destinationsLoading
+//                           ? "Loading destinations..."
+//                           : "Select the place you visited"}
+//                       </option>
+
+//                       {!destinationsLoading &&
+//                         destinations.map((destination) => (
+//                           <option
+//                             key={destination?.id || destination?.slug || destination?.displayName}
+//                             value={destination.displayName}
+//                           >
+//                             {destination.displayName}
+//                           </option>
+//                         ))}
+//                     </select>
+//                   </Field>
+
+//                   {/* Rating */}
+//                   <div>
+//                     <p className="mb-1.5 flex items-baseline gap-1 text-sm font-semibold text-text-dark">
+//                       Your rating
+//                       <span className="text-accent" aria-hidden="true">
+//                         *
+//                       </span>
+//                     </p>
+
+//                     <div className="-ml-1.5 flex gap-0.5" role="radiogroup" aria-label="Choose your rating">
+//                       {[1, 2, 3, 4, 5].map((rating) => (
+//                         <button
+//                           key={rating}
+//                           type="button"
+//                           onClick={() => handleRating(rating)}
+//                           disabled={submitting}
+//                           aria-label={`Give ${rating} star${rating > 1 ? "s" : ""}`}
+//                           aria-pressed={form.rating === rating}
+//                           className="rounded-xl p-1.5 transition-colors hover:bg-white/80 focus:outline-none focus-visible:ring-2 focus-visible:ring-accent/30 disabled:cursor-not-allowed"
+//                         >
+//                           <Star
+//                             className={`h-8 w-8 transition-colors ${
+//                               rating <= form.rating ? "text-accent-bright" : "text-border"
+//                             }`}
+//                             fill={rating <= form.rating ? "currentColor" : "none"}
+//                             strokeWidth={1.5}
+//                             aria-hidden="true"
+//                           />
+//                         </button>
+//                       ))}
+//                     </div>
+
+//                     {errors.rating ? (
+//                       <p role="alert" className="mt-1.5 flex items-start gap-1.5 text-xs text-error-text sm:text-sm">
+//                         <AlertCircle className="mt-0.5 h-3.5 w-3.5 shrink-0 sm:h-4 sm:w-4" aria-hidden="true" />
+//                         {errors.rating}
+//                       </p>
+//                     ) : (
+//                       <p className="mt-1 text-xs text-muted">{form.rating} out of 5 stars</p>
+//                     )}
+//                   </div>
+
+//                   {/* Review */}
+//                   <Field id="modal_review" label="Your review" error={errors.review}>
+//                     <textarea
+//                       id="modal_review"
+//                       name="review"
+//                       value={form.review}
+//                       onChange={handleChange}
+//                       maxLength={3000}
+//                       rows={5}
+//                       placeholder="Tell us about your travel experience..."
+//                       disabled={submitting}
+//                       aria-invalid={errors.review ? "true" : undefined}
+//                       aria-describedby={describedBy("review")}
+//                       className={inputClass(Boolean(errors.review), "min-h-[120px] resize-y py-3")}
+//                     />
+
+//                     <div className="mt-1.5 flex items-center justify-between gap-3 text-xs text-muted">
+//                       <span>Minimum 10 characters</span>
+//                       <span>{form.review.length}/3000</span>
+//                     </div>
+//                   </Field>
+
+//                   {/* Image */}
+//                   <div className="rounded-2xl border border-primary/15 bg-white/80 p-4">
+//                     <ImageUploadField
+//                       value={image}
+//                       onChange={setImage}
+//                       onBusyChange={setImageUploading}
+//                       uploadEndpoint="/uploads/review-image"
+//                       disabled={submitting}
+//                       label="Your photo (optional)"
+//                     />
+
+//                     <p className="mt-2 text-xs leading-relaxed text-muted">
+//                       Add a photo from your trip if you like. It is completely optional.
+//                     </p>
+//                   </div>
+//                 </div>
+//               </div>
+
+//               {/* ==================== STICKY FOOTER ==================== */}
+//               <div className="shrink-0 border-t border-primary/10 bg-white/90 px-4 pb-[max(0.875rem,env(safe-area-inset-bottom))] pt-3 backdrop-blur-md sm:px-6 sm:pb-5 sm:pt-4">
+//                 {submitError && (
+//                   <div
+//                     className="mb-3 flex items-start gap-2 rounded-xl border border-error/20 bg-error-bg px-3 py-2.5 text-sm leading-relaxed text-error-text"
+//                     role="alert"
+//                   >
+//                     <AlertCircle className="mt-0.5 h-4 w-4 shrink-0" aria-hidden="true" />
+//                     <span>{submitError}</span>
+//                   </div>
+//                 )}
+
+//                 <button
+//                   type="submit"
+//                   disabled={submitDisabled}
+//                   aria-busy={submitting}
+//                   className={`inline-flex h-12 w-full items-center justify-center gap-2 rounded-xl bg-accent px-6 text-base font-semibold text-white shadow-brand transition-all hover:bg-accent-hover hover:shadow-orange active:scale-[0.99] disabled:cursor-not-allowed disabled:opacity-70 ${FOCUS_RING}`}
+//                 >
+//                   <Send className="h-[18px] w-[18px]" aria-hidden="true" />
+//                   {submitting
+//                     ? "Submitting..."
+//                     : imageUploading
+//                       ? "Uploading photo..."
+//                       : "Submit review"}
+//                 </button>
+
+//                 <p className="mt-2.5 text-center text-xs leading-relaxed text-muted">
+//                   Your review is published after our team has checked it.
+//                 </p>
+//               </div>
+//             </form>
+//           </>
+//         )}
+//       </div>
+//     </div>
+//   );
+// }
+
+
+
+
 

@@ -1,0 +1,48 @@
+
+
+
+import api from "./axios";
+
+/* =========================================================
+   PUBLIC
+   Used by SeasonedPage.jsx and SeasonedDetail.jsx
+========================================================= */
+ 
+// export const getSeasonedDestinations = () =>
+//   api
+//     .get("/seasoned-destinations")
+//     .then((res) => res.data);
+ 
+// export const getSeasonedDestinationBySlug = (slug) =>
+//   api
+//     .get(`/seasoned-destinations/${encodeURIComponent(slug)}`)
+//     .then((res) => res.data);
+ 
+
+export const getAllSeasonedDestinations = () =>
+  api
+    .get("/seasoned-destinations/admin/all")
+    .then((res) => res.data);
+
+export const getSeasonedDestinationById = (id) =>
+  api
+    .get(`/seasoned-destinations/admin/${id}`)
+    .then((res) => res.data);
+
+export const createSeasonedDestination = (payload) =>
+  api
+    .post("/seasoned-destinations/admin", payload)
+    .then((res) => res.data);
+
+export const updateSeasonedDestination = (id, payload) =>
+  api
+    .put(`/seasoned-destinations/admin/${id}`, payload)
+    .then((res) => res.data);
+
+export const deleteSeasonedDestination = (id) =>
+  api.delete(`/seasoned-destinations/admin/${id}`);
+
+export const renumberSeasonedDestinations = () =>
+  api
+    .post("/seasoned-destinations/admin/renumber")
+    .then((res) => res.data);

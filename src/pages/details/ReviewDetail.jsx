@@ -1,56 +1,54 @@
 
-import { useEffect, useMemo, useState } from "react";
-import { Link, useNavigate, useParams } from "react-router-dom";
+import { useMemo, useState } from "react";
+import { Link, useParams } from "react-router-dom";
 import {
   ArrowLeft,
   ArrowRight,
   CheckCircle2,
   ChevronDown,
-  Image as ImageIcon,
   MapPin,
+  MessageSquareHeart,
+  Quote,
   Send,
   Star,
-  UserRound,
-  X,
 } from "lucide-react";
-import { Helmet } from "react-helmet-async";
 
+
+import {scrollToSection} from "../../utils/scrollToSection";
 import {
-  getTestimonialBySlug,
-  getTestimonials,
   createTestimonial,
   getMostVisited,
+  getTestimonialBySlug,
+  getTestimonials,
 } from "../../api/content";
-
+import { useQuery } from "../../hooks/useQuery";
+import ImageUploadField from "../../components/admin/ImageUploadField";
 import FAQSection from "../../components/FAQSection";
 import Footer from "../../components/Footer";
+import Seo, { SITE_URL } from "../../components/Seo";
+import { RevealGroup } from "../../components/Reveal";
 
-const SITE_URL = "https://onatripholidays.com";
+/* ==================================================================
+   BRAND + HELPERS
+================================================================== */
 
-const INITIAL_FORM = {
-  customer_name: "",
-  customer_city: "",
-  destination: "",
-  rating: 5,
-  review: "",
-};
+const BRAND_NAME = "Manyara Prive Vacations";
 
-function cleanText(value) {
-  return typeof value === "string" ? value.trim() : "";
+const cleanText = (value) =>
+  typeof value === "string" ? value.trim() : "";
+
+function getSafeArray(value) {
+  if (Array.isArray(value)) return value;
+
+  for (const key of ["items", "data", "results"]) {
+    if (Array.isArray(value?.[key])) return value[key];
+  }
+
+  return [];
 }
 
 function getImageUrl(image) {
-  if (!image) return "";
-
-  if (typeof image === "string") {
-    return image.trim();
-  }
-
-  if (typeof image === "object" && typeof image.url === "string") {
-    return image.url.trim();
-  }
-
-  return "";
+  return typeof image === "string" ? image.trim() : cleanText(image?.url);
 }
 
 function getInitials(name) {
@@ -61,7 +59,7 @@ function getInitials(name) {
       .map((part) => part[0])
       .slice(0, 2)
       .join("")
-      .toUpperCase() || "TR"
+      .toUpperCase() || "MP"
   );
 }
 
@@ -69,10 +67,7 @@ function formatDate(dateValue) {
   if (!dateValue) return "";
 
   const date = new Date(dateValue);
-
-  if (Number.isNaN(date.getTime())) {
-    return "";
-  }
+  if (Number.isNaN(date.getTime())) return "";
 
   return new Intl.DateTimeFormat("en-IN", {
     day: "numeric",
@@ -83,35 +78,78 @@ function formatDate(dateValue) {
 
 function truncateText(text, maxLength = 155) {
   const value = cleanText(text);
-
-  if (value.length <= maxLength) {
-    return value;
-  }
-
+  if (value.length <= maxLength) return value;
   return `${value.slice(0, maxLength).trim()}...`;
 }
 
-function StarRating({ rating = 0, size = "normal" }) {
-  const numericRating = Number(rating) || 0;
+/* Unique destination names, ordered by display_order.
+   Works on a copy, so the cached API data is never changed. */
+function buildDestinations(data) {
+  const seen = new Set();
 
-  const starClass =
-    size === "large"
-      ? "w-5 h-5 sm:w-6 sm:h-6"
-      : "w-4 h-4";
+  return getSafeArray(data)
+    .map((item) => ({
+      item,
+      name:
+        cleanText(item?.place_name) ||
+        cleanText(item?.destination) ||
+        cleanText(item?.name) ||
+        cleanText(item?.title),
+    }))
+    .filter(({ name }) => name)
+    .sort(
+      (a, b) =>
+        Number(a.item?.display_order ?? 0) - Number(b.item?.display_order ?? 0)
+    )
+    .filter(({ name }) => {
+      const key = name.toLowerCase();
+      if (seen.has(key)) return false;
+      seen.add(key);
+      return true;
+    })
+    .map(({ name }) => name);
+}
+
+/* The form section uses scroll-mt so it stops below the fixed header. */
+
+const scrollToReviewForm = () => scrollToSection("share-review");
+
+/* One class string for every text field keeps the form consistent. */
+const INPUT =
+  "w-full rounded-xl border border-border bg-input px-4 py-3 text-sm text-text-dark outline-none transition placeholder:text-placeholder focus:border-primary focus:ring-2 focus:ring-primary/30 disabled:cursor-not-allowed disabled:bg-surface";
+
+/* Same button language as PackageDetail / DestinationDetail */
+const BUTTON =
+  "inline-flex items-center justify-center gap-2 rounded-xl bg-primary px-5 py-3 font-semibold text-white transition-colors hover:bg-primary-hover disabled:cursor-not-allowed disabled:opacity-60";
+
+/* ==================================================================
+   STAR RATING
+================================================================== */
+
+const SIZES = {
+  md: "h-4 w-4",
+  lg: "h-5 w-5 sm:h-6 sm:w-6",
+};
+
+/* Read-only stars. Filled stars use the bright logo pink (decorative),
+   so the rating is also always available as text via aria-label. */
+function StarRating({ rating = 0, size = "md" }) {
+  const value = Math.min(5, Math.max(0, Number(rating) || 0));
 
   return (
     <div
-      className="flex items-center gap-1"
-      aria-label={`${numericRating} out of 5 stars`}
+      className="flex items-center gap-0.5"
+      role="img"
+      aria-label={`${value} out of 5 stars`}
     >
       {[1, 2, 3, 4, 5].map((star) => (
         <Star
           key={star}
-          className={`${starClass} ${
-            star <= numericRating
-              ? "fill-current text-orange"
-              : "text-white/30"
+          className={`${SIZES[size]} ${
+            star <= value ? "text-accent-bright" : "text-ink-300"
           }`}
+          fill={star <= value ? "currentColor" : "none"}
+          strokeWidth={1.5}
           aria-hidden="true"
         />
       ))}
@@ -119,12 +157,144 @@ function StarRating({ rating = 0, size = "normal" }) {
   );
 }
 
-function FormStarRating({ value, onChange }) {
+/* ==================================================================
+   REVIEW CARD
+================================================================== */
+
+/* One review card. Used in "More reviews". */
+function ReviewCard({ item }) {
+  const name = cleanText(item?.customer_name) || "Traveller";
+  const meta = [cleanText(item?.customer_city), cleanText(item?.destination)]
+    .filter(Boolean)
+    .join(" · ");
+  const imageUrl = getImageUrl(item?.image);
+  const slug = cleanText(item?.slug);
+
+  return (
+    <article className="card-lift relative flex h-full flex-col gap-4 rounded-2xl border border-divider bg-card p-6 shadow-travel-card hover:border-secondary-light hover:shadow-travel-hover">
+      <Quote
+        className="absolute right-5 top-5 h-8 w-8 text-surface-soft"
+        aria-hidden="true"
+      />
+
+      <StarRating rating={item?.rating} />
+
+      <p className="line-clamp-6 flex-1 text-sm leading-relaxed text-text">
+        “{cleanText(item?.review)}”
+      </p>
+
+      <div className="flex items-center gap-3 border-t border-divider pt-4">
+        {imageUrl ? (
+          <img
+            src={imageUrl}
+            alt={`${name} profile`}
+            loading="lazy"
+            decoding="async"
+            width="44"
+            height="44"
+            className="h-11 w-11 shrink-0 rounded-full object-cover"
+          />
+        ) : (
+          <div
+            className="flex h-11 w-11 shrink-0 items-center justify-center rounded-full bg-surface-soft text-xs font-semibold text-primary-dark"
+            aria-hidden="true"
+          >
+            {getInitials(name)}
+          </div>
+        )}
+
+        <div className="min-w-0 flex-1">
+          <p className="truncate text-sm font-semibold text-text-dark">{name}</p>
+          {meta && <p className="mt-0.5 truncate text-xs text-muted">{meta}</p>}
+        </div>
+      </div>
+
+      {slug && (
+        <Link
+          to={`/reviews/${encodeURIComponent(slug)}`}
+          aria-label={`Read full review from ${name}`}
+          className="group inline-flex w-full items-center justify-center gap-2 rounded-xl border border-divider bg-surface px-4 py-2.5 text-sm font-semibold text-text-dark transition-colors hover:border-primary hover:bg-primary hover:text-white"
+        >
+          Read Full Review
+          <ArrowRight className="arrow-shift h-4 w-4" aria-hidden="true" />
+        </Link>
+      )}
+    </article>
+  );
+}
+
+/* Shown only when nothing is cached yet. */
+function ReviewCardSkeleton() {
   return (
     <div
-      className="flex items-center gap-1.5"
+      className="flex h-64 animate-pulse flex-col gap-4 rounded-2xl border border-divider bg-card p-6"
+      aria-hidden="true"
+    >
+      <div className="h-4 w-24 rounded bg-primary/10" />
+      <div className="flex-1 space-y-2.5">
+        <div className="h-3 rounded bg-primary/10" />
+        <div className="h-3 rounded bg-primary/10" />
+        <div className="h-3 w-3/4 rounded bg-primary/10" />
+      </div>
+      <div className="flex items-center gap-3 border-t border-divider pt-4">
+        <div className="h-11 w-11 rounded-full bg-primary/10" />
+        <div className="h-3 w-32 rounded bg-primary/10" />
+      </div>
+    </div>
+  );
+}
+
+/* ==================================================================
+   REVIEW FORM
+================================================================== */
+
+const INITIAL_FORM = {
+  customer_name: "",
+  customer_city: "",
+  destination: "",
+  rating: 5,
+  review: "",
+};
+
+const INTRO_POINTS = [
+  {
+    Icon: MessageSquareHeart,
+    title: "Share your experience",
+    text: "Tell us what made your trip memorable.",
+  },
+  {
+    Icon: Star,
+    title: "Rate your experience",
+    text: "Give your honest rating from 1 to 5 stars.",
+  },
+  {
+    Icon: CheckCircle2,
+    title: "Pending approval",
+    text: "Reviews are checked before appearing publicly.",
+  },
+];
+
+function Field({ id, label, hint, children }) {
+  return (
+    <div>
+      <label
+        htmlFor={id}
+        className="mb-1.5 block text-sm font-medium text-text-dark"
+      >
+        {label}
+      </label>
+      {children}
+      {hint}
+    </div>
+  );
+}
+
+function RatingInput({ value, onChange, disabled }) {
+  return (
+    <div
       role="radiogroup"
-      aria-label="Rating"
+      aria-label="Your rating"
+      className="flex items-center gap-1"
     >
       {[1, 2, 3, 4, 5].map((star) => (
         <button
@@ -133,15 +303,17 @@ function FormStarRating({ value, onChange }) {
           role="radio"
           aria-checked={value === star}
           aria-label={`${star} star${star > 1 ? "s" : ""}`}
+          disabled={disabled}
           onClick={() => onChange(star)}
-          className="rounded-md p-1 transition hover:scale-110 focus:outline-none focus:ring-2 focus:ring-orange/30"
+          className="rounded-lg p-1 transition hover:scale-110 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/30 disabled:cursor-not-allowed"
         >
           <Star
-            className={`w-7 h-7 ${
-              star <= value
-                ? "fill-orange text-orange"
-                : "text-gray-300"
+            className={`h-7 w-7 ${
+              star <= value ? "text-accent-bright" : "text-ink-300"
             }`}
+            fill={star <= value ? "currentColor" : "none"}
+            strokeWidth={1.5}
+            aria-hidden="true"
           />
         </button>
       ))}
@@ -149,882 +321,696 @@ function FormStarRating({ value, onChange }) {
   );
 }
 
-function RelatedReviewCard({ item }) {
-  const imageUrl = getImageUrl(item?.image);
-  const name = cleanText(item?.customer_name) || "Traveller";
-  const destination =
-    cleanText(item?.destination) || "Travel experience";
-
+function SuccessCard({ onReset }) {
   return (
-    <Link
-      to={
-        item?.slug
-          ? `/reviews/${encodeURIComponent(item.slug)}`
-          : "/reviews"
-      }
-      className="group flex h-full flex-col rounded-2xl border border-navy/10 bg-white p-5 shadow-sm transition hover:-translate-y-1 hover:shadow-lg"
+    <div
+      role="status"
+      className="rounded-3xl border border-success/30 bg-success-bg p-6 text-center sm:p-8 lg:p-10"
     >
-      <div className="flex items-start gap-3">
-        {imageUrl ? (
-          <img
-            src={imageUrl}
-            alt={`${name} travel review`}
-            className="h-12 w-12 shrink-0 rounded-full object-cover ring-2 ring-surface"
-            loading="lazy"
-          />
-        ) : (
-          <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-full bg-navy text-sm font-bold text-white">
-            {getInitials(name)}
-          </div>
-        )}
-
-        <div className="min-w-0 flex-1">
-          <h3 className="truncate text-base font-bold text-navy">
-            {name}
-          </h3>
-
-          <div className="mt-1 flex items-center gap-2">
-            <StarRating rating={item?.rating} />
-            <span className="text-xs font-semibold text-gray-500">
-              {Number(item?.rating) || 0}/5
-            </span>
-          </div>
-        </div>
+      <div className="mx-auto flex h-16 w-16 items-center justify-center rounded-full bg-card">
+        <CheckCircle2 className="h-9 w-9 text-success" aria-hidden="true" />
       </div>
 
-      <div className="mt-4 flex items-center gap-1.5 text-sm font-semibold text-orange">
-        <MapPin className="h-4 w-4" aria-hidden="true" />
-        <span className="truncate">{destination}</span>
-      </div>
+      <h2 className="mt-6 font-display text-3xl font-semibold text-text-dark">
+        Thank You!
+      </h2>
 
-      <p className="mt-3 line-clamp-4 text-sm leading-6 text-gray-600">
-        {cleanText(item?.review)}
+      <p className="mt-3 text-base font-medium text-text">
+        Thank you for your valuable response!
       </p>
 
-      <div className="mt-auto pt-5">
-        <span className="inline-flex items-center gap-2 text-sm font-bold text-navy transition group-hover:text-orange">
-          Read Full Review
-          <ArrowRight
-            className="h-4 w-4 transition group-hover:translate-x-1"
-            aria-hidden="true"
-          />
-        </span>
+      <p className="mx-auto mt-3 max-w-xl text-sm leading-relaxed text-text-secondary">
+        Your review has been submitted successfully. Our team will review your
+        response before publishing it on our website.
+      </p>
+
+      <div className="mx-auto mt-5 max-w-sm rounded-xl border border-divider bg-card px-4 py-3">
+        <p className="text-xs text-muted">Review status</p>
+        <p className="mt-1 text-sm font-semibold text-text-dark">
+          Pending approval
+        </p>
       </div>
-    </Link>
+
+      <button type="button" onClick={onReset} className={`${BUTTON} mt-6 px-7`}>
+        <MessageSquareHeart className="h-4 w-4" aria-hidden="true" />
+        Write Another Review
+      </button>
+    </div>
   );
 }
 
-export default function ReviewDetail() {
-  const { slug } = useParams();
-  const navigate = useNavigate();
+function ReviewForm() {
+  const {
+    data: mostVisited,
+    loading: loadingPlaces,
+    error: placesError,
+  } = useQuery(getMostVisited);
 
-  const [review, setReview] = useState(null);
-  const [otherReviews, setOtherReviews] = useState([]);
-  const [destinations, setDestinations] = useState([]);
-
-  const [loading, setLoading] = useState(true);
-  const [loadingRelated, setLoadingRelated] = useState(true);
-  const [loadingDestinations, setLoadingDestinations] = useState(true);
-
-  const [error, setError] = useState("");
+  const places = useMemo(() => buildDestinations(mostVisited), [mostVisited]);
 
   const [form, setForm] = useState(INITIAL_FORM);
   const [image, setImage] = useState(null);
-  const [imagePreview, setImagePreview] = useState("");
-
   const [submitting, setSubmitting] = useState(false);
-  const [successMessage, setSuccessMessage] = useState("");
-  const [formError, setFormError] = useState("");
+  const [error, setError] = useState("");
+  const [success, setSuccess] = useState(false);
 
-  /*
-   * ---------------------------------------------------------
-   * LOAD CURRENT REVIEW
-   * ---------------------------------------------------------
-   */
+  const update = (field, value) => {
+    setForm((previous) => ({ ...previous, [field]: value }));
+    setError("");
+  };
 
-  useEffect(() => {
-    let cancelled = false;
+  const handleChange = (event) => update(event.target.name, event.target.value);
 
-    async function loadReview() {
-      if (!slug) {
-        setError("Review not found.");
-        setLoading(false);
-        return;
-      }
-
-      try {
-        setLoading(true);
-        setError("");
-
-        const data = await getTestimonialBySlug(slug);
-
-        if (!cancelled) {
-          setReview(data);
-        }
-      } catch (err) {
-        console.error("Failed to load review:", err);
-
-        if (!cancelled) {
-          setReview(null);
-          setError(
-            err?.response?.status === 404
-              ? "Review not found."
-              : "Unable to load this review right now."
-          );
-        }
-      } finally {
-        if (!cancelled) {
-          setLoading(false);
-        }
-      }
-    }
-
-    loadReview();
-
-    return () => {
-      cancelled = true;
-    };
-  }, [slug]);
-
-  /*
-   * ---------------------------------------------------------
-   * LOAD OTHER REVIEWS
-   * ---------------------------------------------------------
-   */
-
-  useEffect(() => {
-    let cancelled = false;
-
-    async function loadOtherReviews() {
-      try {
-        setLoadingRelated(true);
-
-        const data = await getTestimonials();
-
-        if (!cancelled) {
-          const items = Array.isArray(data) ? data : [];
-
-          setOtherReviews(items);
-        }
-      } catch (err) {
-        console.error("Failed to load other reviews:", err);
-
-        if (!cancelled) {
-          setOtherReviews([]);
-        }
-      } finally {
-        if (!cancelled) {
-          setLoadingRelated(false);
-        }
-      }
-    }
-
-    loadOtherReviews();
-
-    return () => {
-      cancelled = true;
-    };
-  }, []);
-
-  /*
-   * ---------------------------------------------------------
-   * LOAD DESTINATIONS FOR REVIEW FORM
-   * ---------------------------------------------------------
-   */
-
-  useEffect(() => {
-    let cancelled = false;
-
-    async function loadDestinations() {
-      try {
-        setLoadingDestinations(true);
-
-        const data = await getMostVisited();
-
-        if (!cancelled) {
-          const items = Array.isArray(data) ? data : [];
-
-          const uniquePlaces = [];
-          const seen = new Set();
-
-          items
-            .sort(
-              (a, b) =>
-                Number(a?.display_order ?? 0) -
-                Number(b?.display_order ?? 0)
-            )
-            .forEach((item) => {
-              const place =
-                cleanText(item?.place_name) ||
-                cleanText(item?.destination) ||
-                cleanText(item?.name) ||
-                cleanText(item?.title);
-
-              if (!place) return;
-
-              const key = place.toLowerCase();
-
-              if (seen.has(key)) return;
-
-              seen.add(key);
-              uniquePlaces.push(place);
-            });
-
-          setDestinations(uniquePlaces);
-        }
-      } catch (err) {
-        console.error("Failed to load destinations:", err);
-
-        if (!cancelled) {
-          setDestinations([]);
-        }
-      } finally {
-        if (!cancelled) {
-          setLoadingDestinations(false);
-        }
-      }
-    }
-
-    loadDestinations();
-
-    return () => {
-      cancelled = true;
-    };
-  }, []);
-
-  /*
-   * ---------------------------------------------------------
-   * IMAGE PREVIEW
-   * ---------------------------------------------------------
-   */
-
-  useEffect(() => {
-    return () => {
-      if (imagePreview?.startsWith("blob:")) {
-        URL.revokeObjectURL(imagePreview);
-      }
-    };
-  }, [imagePreview]);
-
-  /*
-   * ---------------------------------------------------------
-   * DERIVED DATA
-   * ---------------------------------------------------------
-   */
-
-  const customerName =
-    cleanText(review?.customer_name) || "Traveller";
-
-  const customerCity = cleanText(review?.customer_city);
-
-  const destination =
-    cleanText(review?.destination) || "On a Trip Holiday";
-
-  const reviewText = cleanText(review?.review);
-
-  const rating = Number(review?.rating) || 0;
-
-  const reviewImage = getImageUrl(review?.image);
-
-  const createdDate = formatDate(review?.created_at);
-
-  const canonicalSlug =
-    cleanText(review?.slug) || cleanText(slug);
-
-  const canonicalPath = canonicalSlug
-    ? `/reviews/${encodeURIComponent(canonicalSlug)}`
-    : "/reviews";
-
-  const canonicalUrl = `${SITE_URL}${canonicalPath}`;
-
-  const seoTitle = `${customerName}'s ${destination} Travel Review | On a Trip Holiday`;
-
-  const seoDescription =
-    truncateText(reviewText, 155) ||
-    `Read ${customerName}'s travel experience from ${destination} with On a Trip Holiday.`;
-
-  const relatedReviews = useMemo(() => {
-    if (!review) return [];
-
-    const currentId = review?.id;
-    const currentSlug = cleanText(review?.slug);
-
-    return otherReviews
-      .filter((item) => {
-        if (currentId && item?.id === currentId) {
-          return false;
-        }
-
-        if (
-          currentSlug &&
-          cleanText(item?.slug) === currentSlug
-        ) {
-          return false;
-        }
-
-        return Boolean(item?.slug);
-      })
-      .slice(0, 6);
-  }, [otherReviews, review]);
-
-  /*
-   * ---------------------------------------------------------
-   * FORM HANDLERS
-   * ---------------------------------------------------------
-   */
-
-  function updateForm(field, value) {
-    setForm((previous) => ({
-      ...previous,
-      [field]: value,
-    }));
-
-    setFormError("");
-    setSuccessMessage("");
+  function validate() {
+    if (cleanText(form.customer_name).length < 2)
+      return "Please enter your name.";
+    if (cleanText(form.customer_city).length < 2)
+      return "Please enter your city.";
+    if (!cleanText(form.destination))
+      return "Please select the place you visited.";
+    if (cleanText(form.review).length < 10)
+      return "Please write at least 10 characters for your review.";
+    return "";
   }
-
-  function handleImageChange(event) {
-    const file = event.target.files?.[0];
-
-    if (!file) return;
-
-    if (!file.type.startsWith("image/")) {
-      setFormError("Please select a valid image file.");
-      return;
-    }
-
-    if (file.size > 5 * 1024 * 1024) {
-      setFormError("Image size must be 5MB or less.");
-      return;
-    }
-
-    if (imagePreview?.startsWith("blob:")) {
-      URL.revokeObjectURL(imagePreview);
-    }
-
-    setImage(file);
-    setImagePreview(URL.createObjectURL(file));
-    setFormError("");
-  }
-
-  function removeImage() {
-    if (imagePreview?.startsWith("blob:")) {
-      URL.revokeObjectURL(imagePreview);
-    }
-
-    setImage(null);
-    setImagePreview("");
-  }
-
-
-
-function scrollToReviewForm() {
-  const section = document.getElementById("share-review");
-
-  if (!section) return;
-
-  const header =
-    document.querySelector("header") ||
-    document.querySelector('[role="banner"]');
-
-  const headerHeight = header
-    ? header.getBoundingClientRect().height
-    : window.innerWidth < 640
-      ? 72
-      : 88;
-
-  const extraSpacing = 20;
-
-  const sectionTop =
-    section.getBoundingClientRect().top + window.scrollY;
-
-  window.scrollTo({
-    top: Math.max(0, sectionTop - headerHeight - extraSpacing),
-    behavior: "smooth",
-  });
-}
 
   async function handleSubmit(event) {
     event.preventDefault();
+    if (submitting) return;
+
+    const problem = validate();
+    if (problem) {
+      setError(problem);
+      return;
+    }
 
     setSubmitting(true);
-    setFormError("");
-    setSuccessMessage("");
-
-    const customerNameValue = cleanText(form.customer_name);
-    const customerCityValue = cleanText(form.customer_city);
-    const destinationValue = cleanText(form.destination);
-    const reviewValue = cleanText(form.review);
-
-    if (customerNameValue.length < 2) {
-      setFormError("Please enter your name.");
-      setSubmitting(false);
-      return;
-    }
-
-    if (customerCityValue.length < 2) {
-      setFormError("Please enter your city.");
-      setSubmitting(false);
-      return;
-    }
-
-    if (!destinationValue) {
-      setFormError("Please select the place you visited.");
-      setSubmitting(false);
-      return;
-    }
-
-    if (reviewValue.length < 10) {
-      setFormError("Please write at least 10 characters for your review.");
-      setSubmitting(false);
-      return;
-    }
+    setError("");
 
     try {
-      /*
-       * Keep the same backend payload structure.
-       *
-       * The public endpoint creates the review as DRAFT.
-       * Admin must publish it before it becomes public.
-       *
-       * If your existing upload flow already converts the selected
-       * image into { url, public_id }, keep using that existing
-       * upload implementation here.
-       */
-
-      const payload = {
-        customer_name: customerNameValue,
-        customer_city: customerCityValue,
-        destination: destinationValue,
+      await createTestimonial({
+        customer_name: cleanText(form.customer_name),
+        customer_city: cleanText(form.customer_city),
+        destination: cleanText(form.destination),
         rating: Number(form.rating),
-        review: reviewValue,
-        image: image
-          ? {
-              url: imagePreview,
-              public_id: null,
-            }
-          : null,
-      };
-
-      await createTestimonial(payload);
+        review: cleanText(form.review),
+        image: image || null,
+      });
 
       setForm(INITIAL_FORM);
-      removeImage();
-
-      setSuccessMessage(
-        "Thank you for your valuable response! Your review has been submitted for approval."
-      );
+      setImage(null);
+      setSuccess(true);
     } catch (err) {
-      console.error("Failed to submit review:", err);
+      console.error("Failed to submit testimonial:", err);
 
-      const detail =
-        err?.response?.data?.detail;
-
-      setFormError(
+      const detail = err?.response?.data?.detail;
+      setError(
         typeof detail === "string"
           ? detail
-          : "Unable to submit your review right now. Please try again."
+          : "Unable to submit your review. Please try again."
       );
     } finally {
       setSubmitting(false);
     }
   }
 
-  /*
-   * ---------------------------------------------------------
-   * JSON-LD
-   * ---------------------------------------------------------
-   */
+  if (success) return <SuccessCard onReset={() => setSuccess(false)} />;
 
-  const structuredData = useMemo(() => {
-    if (!review) {
-      return null;
-    }
+  const noPlaces = !loadingPlaces && places.length === 0;
 
-    const reviewSchema = {
-      "@type": "Review",
-      "@id": `${canonicalUrl}#review`,
-      url: canonicalUrl,
-      name: `${customerName}'s ${destination} travel review`,
-      author: {
-        "@type": "Person",
-        name: customerName,
-      },
-      reviewBody: reviewText,
-      reviewRating: {
-        "@type": "Rating",
-        ratingValue: rating,
-        bestRating: 5,
-        worstRating: 1,
-      },
-      itemReviewed: {
-        "@type": "Place",
-        name: destination,
-      },
-    };
+  let placeHint = "Select the destination you actually visited.";
+  if (noPlaces) placeHint = "No destinations are currently available.";
+  if (noPlaces && placesError)
+    placeHint = "Unable to load available destinations. Please try again.";
 
-    if (createdDate) {
-      reviewSchema.datePublished = review.created_at;
-    }
+  return (
+    <div className="grid w-full grid-cols-1 gap-8 lg:grid-cols-[minmax(0,0.75fr)_minmax(0,1.25fr)] lg:items-start lg:gap-12">
+      {/* ---------------------------- Intro ---------------------------- */}
+      <div className="min-w-0 lg:sticky lg:top-[calc(var(--top-info-height,0px)+6rem)]">
+        <p className="text-xs font-semibold uppercase tracking-wide text-primary">
+          Share your experience
+        </p>
 
-    if (reviewImage) {
-      reviewSchema.image = reviewImage;
-    }
+        <h2 className="mt-2 font-display text-3xl font-semibold leading-tight text-text-dark sm:text-4xl">
+          Your Valuable Review
+        </h2>
 
-    return {
-      "@context": "https://schema.org",
-      "@graph": [
-        {
-          "@type": "WebPage",
-          "@id": `${canonicalUrl}#webpage`,
-          url: canonicalUrl,
-          name: seoTitle,
-          description: seoDescription,
-          mainEntity: {
-            "@id": `${canonicalUrl}#review`,
-          },
-          breadcrumb: {
-            "@id": `${canonicalUrl}#breadcrumb`,
-          },
-        },
-        reviewSchema,
-        {
-          "@type": "BreadcrumbList",
-          "@id": `${canonicalUrl}#breadcrumb`,
-          itemListElement: [
-            {
-              "@type": "ListItem",
-              position: 1,
-              name: "Home",
-              item: SITE_URL,
-            },
-            {
-              "@type": "ListItem",
-              position: 2,
-              name: "Reviews",
-              item: `${SITE_URL}/reviews`,
-            },
-            {
-              "@type": "ListItem",
-              position: 3,
-              name: `${customerName} – ${destination}`,
-              item: canonicalUrl,
-            },
-          ],
-        },
-      ],
-    };
-  }, [
-    review,
-    canonicalUrl,
+        <p className="mt-4 max-w-lg text-sm leading-7 text-text sm:text-base">
+          Tell future travellers about your experience with {BRAND_NAME}.
+        </p>
+
+        <RevealGroup className="mt-7 space-y-5">
+          {INTRO_POINTS.map(({ Icon, title, text }) => (
+            <div key={title} className="flex items-start gap-3">
+              <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-surface-soft text-primary">
+                <Icon className="h-4 w-4" aria-hidden="true" />
+              </span>
+              <div className="min-w-0">
+                <p className="text-sm font-semibold text-text-dark">{title}</p>
+                <p className="mt-1 text-xs leading-5 text-muted">{text}</p>
+              </div>
+            </div>
+          ))}
+        </RevealGroup>
+      </div>
+
+      {/* ----------------------------- Form ---------------------------- */}
+      <form
+        onSubmit={handleSubmit}
+        className="min-w-0 space-y-5 rounded-3xl border border-divider bg-card p-5 shadow-travel-card sm:p-7 lg:p-8"
+      >
+        <div className="grid gap-5 sm:grid-cols-2">
+          <Field id="customer_name" label="Your Name">
+            <input
+              id="customer_name"
+              name="customer_name"
+              type="text"
+              value={form.customer_name}
+              onChange={handleChange}
+              required
+              minLength={2}
+              maxLength={100}
+              placeholder="Enter your name"
+              autoComplete="name"
+              disabled={submitting}
+              className={INPUT}
+            />
+          </Field>
+
+          <Field id="customer_city" label="Your City">
+            <input
+              id="customer_city"
+              name="customer_city"
+              type="text"
+              value={form.customer_city}
+              onChange={handleChange}
+              required
+              minLength={2}
+              maxLength={100}
+              placeholder="e.g. Hyderabad"
+              autoComplete="address-level2"
+              disabled={submitting}
+              className={INPUT}
+            />
+          </Field>
+        </div>
+
+        <Field
+          id="destination"
+          label="Place Visited"
+          hint={
+            <p
+              className={`mt-1.5 text-xs ${
+                noPlaces && placesError ? "text-error-text" : "text-muted"
+              }`}
+            >
+              {placeHint}
+            </p>
+          }
+        >
+          <div className="relative">
+            <select
+              id="destination"
+              name="destination"
+              value={form.destination}
+              onChange={handleChange}
+              required
+              disabled={submitting || loadingPlaces}
+              className={`${INPUT} appearance-none pr-10`}
+            >
+              <option value="">
+                {loadingPlaces
+                  ? "Loading destinations..."
+                  : "Select the place you visited"}
+              </option>
+              {places.map((place) => (
+                <option key={place} value={place}>
+                  {place}
+                </option>
+              ))}
+            </select>
+            <ChevronDown
+              className="pointer-events-none absolute right-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted"
+              aria-hidden="true"
+            />
+          </div>
+        </Field>
+
+        <div>
+          <p className="mb-1.5 text-sm font-medium text-text-dark">
+            Your Rating
+          </p>
+          <RatingInput
+            value={Number(form.rating)}
+            onChange={(value) => update("rating", value)}
+            disabled={submitting}
+          />
+          <p className="mt-1 text-xs text-muted">{form.rating} out of 5 stars</p>
+        </div>
+
+        <Field id="review" label="Your Review">
+          <textarea
+            id="review"
+            name="review"
+            value={form.review}
+            onChange={handleChange}
+            required
+            minLength={10}
+            maxLength={3000}
+            rows={6}
+            placeholder="Tell us about your travel experience..."
+            disabled={submitting}
+            className={`${INPUT} resize-y leading-6`}
+          />
+          <div className="mt-1 flex justify-end text-xs text-muted">
+            {form.review.length}/3000
+          </div>
+        </Field>
+
+        <div className="rounded-2xl border border-divider bg-surface p-4 sm:p-5">
+          <ImageUploadField
+            value={image}
+            onChange={setImage}
+            label="Your Photo (Optional)"
+          />
+          <p className="mt-2 text-xs text-muted">
+            You can share a photo from your trip, but this is completely
+            optional.
+          </p>
+        </div>
+
+        {error && (
+          <div
+            role="alert"
+            className="rounded-xl border border-error/30 bg-error-bg px-4 py-3 text-sm text-error-text"
+          >
+            {error}
+          </div>
+        )}
+
+        <button
+          type="submit"
+          disabled={submitting || loadingPlaces || places.length === 0}
+          className={`${BUTTON} w-full`}
+        >
+          {submitting ? (
+            <>
+              <span
+                className="h-4 w-4 animate-spin rounded-full border-2 border-white/30 border-t-white"
+                aria-hidden="true"
+              />
+              Submitting...
+            </>
+          ) : (
+            <>
+              <Send className="h-4 w-4" aria-hidden="true" />
+              Submit Your Review
+            </>
+          )}
+        </button>
+
+        <p className="text-center text-xs text-muted">
+          Your review will be published after our team reviews it.
+        </p>
+      </form>
+    </div>
+  );
+}
+
+/* ==================================================================
+   PURE HELPERS (SEO)
+================================================================== */
+
+function getReviewDetails(review, slug) {
+  const customerName = cleanText(review?.customer_name) || "Traveller";
+  const destination = cleanText(review?.destination);
+  const reviewText = cleanText(review?.review);
+  const canonicalSlug = cleanText(review?.slug) || cleanText(slug);
+  const path = `/reviews/${encodeURIComponent(canonicalSlug)}`;
+
+  return {
     customerName,
+    customerCity: cleanText(review?.customer_city),
     destination,
     reviewText,
-    rating,
-    createdDate,
-    reviewImage,
-    seoTitle,
-    seoDescription,
-  ]);
+    rating: Number(review?.rating) || 0,
+    image: getImageUrl(review?.image),
+    createdAt: review?.created_at,
+    createdDate: formatDate(review?.created_at),
+    path,
+    canonicalUrl: `${SITE_URL}${path}`,
+    heading: destination
+      ? `${customerName}'s experience in ${destination}`
+      : `${customerName}'s travel experience`,
+    seoTitle: `${customerName}'s ${
+      destination ? `${destination} ` : ""
+    }Travel Review | ${BRAND_NAME}`,
+    seoDescription:
+      truncateText(reviewText, 155) ||
+      `Read ${customerName}'s travel experience with ${BRAND_NAME}.`,
+  };
+}
 
-  /*
-   * ---------------------------------------------------------
-   * LOADING
-   * ---------------------------------------------------------
-   */
+function buildStructuredData(d) {
+  const url = d.canonicalUrl;
 
-  if (loading) {
-    return (
-      <div className="min-h-screen bg-surface">
-        <div className="mx-auto flex min-h-[70vh] max-w-7xl items-center justify-center px-4">
-          <div className="text-center">
-            <div className="mx-auto h-10 w-10 animate-spin rounded-full border-4 border-navy/10 border-t-orange" />
+  const reviewSchema = {
+    "@type": "Review",
+    "@id": `${url}#review`,
+    url,
+    name: `${d.customerName}'s ${d.destination || "travel"} review`,
+    author: { "@type": "Person", name: d.customerName },
+    reviewBody: d.reviewText,
+    reviewRating: {
+      "@type": "Rating",
+      ratingValue: d.rating,
+      bestRating: 5,
+      worstRating: 1,
+    },
+    itemReviewed: d.destination
+      ? { "@type": "Place", name: d.destination }
+      : { "@type": "TravelAgency", name: BRAND_NAME },
+  };
 
-            <p className="mt-4 text-sm font-medium text-gray-500">
-              Loading review...
-            </p>
+  if (d.createdDate) reviewSchema.datePublished = d.createdAt;
+  if (d.image) reviewSchema.image = d.image;
+
+  return {
+    "@context": "https://schema.org",
+    "@graph": [
+      {
+        "@type": "WebPage",
+        "@id": `${url}#webpage`,
+        url,
+        name: d.seoTitle,
+        description: d.seoDescription,
+        mainEntity: { "@id": `${url}#review` },
+        breadcrumb: { "@id": `${url}#breadcrumb` },
+      },
+      reviewSchema,
+      {
+        "@type": "BreadcrumbList",
+        "@id": `${url}#breadcrumb`,
+        itemListElement: [
+          { "@type": "ListItem", position: 1, name: "Home", item: SITE_URL },
+          {
+            "@type": "ListItem",
+            position: 2,
+            name: "Reviews",
+            item: `${SITE_URL}/reviews`,
+          },
+          {
+            "@type": "ListItem",
+            position: 3,
+            name: d.destination
+              ? `${d.customerName} – ${d.destination}`
+              : d.customerName,
+            item: url,
+          },
+        ],
+      },
+    ],
+  };
+}
+
+/* ==================================================================
+   SMALL COMPONENTS
+================================================================== */
+
+function Avatar({ name, className = "h-12 w-12 text-sm" }) {
+  return (
+    <div
+      className={`flex shrink-0 items-center justify-center rounded-full bg-surface-soft font-bold text-primary-dark ${className}`}
+      aria-hidden="true"
+    >
+      {getInitials(name)}
+    </div>
+  );
+}
+
+/* Shown only when nothing is cached yet. */
+function DetailSkeleton() {
+  return (
+    <div
+      className="min-h-screen bg-background"
+      role="status"
+      aria-label="Loading review"
+    >
+      <div className="mx-auto max-w-7xl animate-pulse px-4 py-12 sm:px-6 lg:px-8 lg:py-16">
+        <div className="h-4 w-24 rounded bg-primary/10" />
+        <div className="mt-8 grid gap-10 lg:grid-cols-[1fr_400px]">
+          <div className="space-y-4">
+            <div className="h-6 w-40 rounded-full bg-primary/10" />
+            <div className="h-10 w-3/4 rounded bg-primary/10" />
+            <div className="h-10 w-1/2 rounded bg-primary/10" />
+            <div className="h-24 rounded bg-primary/10" />
           </div>
+          <div className="h-80 rounded-3xl bg-primary/10" />
         </div>
       </div>
-    );
+    </div>
+  );
+}
+
+/* Missing review (404) vs. a real loading problem */
+function StateMessage({ title, message, code, onRetry }) {
+  return (
+    <div className="min-h-[100dvh] bg-background">
+      <div className="mx-auto max-w-3xl px-4 py-20 text-center sm:px-6 sm:py-28">
+        {code && (
+          <p className="mb-3 font-display text-6xl font-semibold text-primary/30">
+            {code}
+          </p>
+        )}
+
+        <h1 className="mb-3 font-display text-3xl font-semibold text-text-dark sm:text-4xl">
+          {title}
+        </h1>
+
+        <p className="mx-auto mb-8 max-w-md text-text">{message}</p>
+
+        <div className="flex flex-col items-center justify-center gap-3 sm:flex-row">
+          {onRetry && (
+            <button
+              type="button"
+              onClick={onRetry}
+              className={`${BUTTON} min-h-[44px]`}
+            >
+              Try again
+            </button>
+          )}
+
+          <Link
+            to="/reviews"
+            className="inline-flex min-h-[44px] items-center justify-center gap-2 rounded-xl border border-border px-5 py-3 font-semibold text-text-dark transition-colors hover:border-primary hover:bg-surface-soft hover:text-primary"
+          >
+            <ArrowLeft className="h-4 w-4" aria-hidden="true" />
+            Back to Reviews
+          </Link>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+/* ==================================================================
+   PAGE
+================================================================== */
+
+export default function ReviewDetail() {
+  const { slug } = useParams();
+
+  /* Cached data: instant on repeat visits, updates itself when fresh. */
+  const { data, loading, error } = useQuery(getTestimonialBySlug, slug);
+  const review = data?.data ?? data ?? null;
+
+  const { data: allReviews, loading: loadingRelated } =
+    useQuery(getTestimonials);
+
+  const d = useMemo(() => getReviewDetails(review, slug), [review, slug]);
+
+  const structuredData = useMemo(
+    () => (review ? buildStructuredData(d) : null),
+    [review, d]
+  );
+
+  const relatedReviews = useMemo(() => {
+    const currentSlug = cleanText(review?.slug);
+
+    return getSafeArray(allReviews)
+      .filter((item) => {
+        const itemSlug = cleanText(item?.slug);
+        if (!itemSlug || itemSlug === currentSlug) return false;
+        return !(review?.id && item?.id === review.id);
+      })
+      .slice(0, 6);
+  }, [allReviews, review]);
+
+  /* --------------------------------------------------
+     STATES
+  -------------------------------------------------- */
+  if (loading) {
+    return <DetailSkeleton />;
   }
 
-  /*
-   * ---------------------------------------------------------
-   * NOT FOUND
-   * ---------------------------------------------------------
-   */
-
   if (!review) {
+    const status = error?.response?.status;
+    const isRealError = Boolean(error) && status !== 404;
+
+    if (isRealError) {
+      console.error("Failed to load review:", slug, error);
+
+      return (
+        <StateMessage
+          title="We couldn't load this review"
+          message="Something went wrong while loading this page. Please check your connection and try again."
+          onRetry={() => window.location.reload()}
+        />
+      );
+    }
+
     return (
       <>
-        <Helmet>
-          <title>Review Not Found | On a Trip Holiday</title>
-          <meta
-            name="robots"
-            content="noindex,follow"
-          />
-        </Helmet>
+        <Seo
+          title={`Review Not Found | ${BRAND_NAME}`}
+          path={d.path}
+          noindex
+        />
 
-        <main className="min-h-screen bg-surface">
-          <section className="mx-auto flex min-h-[70vh] max-w-3xl items-center justify-center px-4 py-16 text-center">
-            <div>
-              <div className="mx-auto flex h-16 w-16 items-center justify-center rounded-full bg-navy/5">
-                <MapPin className="h-7 w-7 text-navy" />
-              </div>
-
-              <h1 className="mt-6 text-3xl font-bold text-navy">
-                {error || "Review not found"}
-              </h1>
-
-              <p className="mx-auto mt-3 max-w-xl text-gray-600">
-                This review may no longer be available or the
-                link may be incorrect.
-              </p>
-
-              <Link
-                to="/reviews"
-                className="mt-7 inline-flex items-center gap-2 rounded-xl bg-navy px-5 py-3 font-semibold text-white transition hover:bg-navy/90"
-              >
-                <ArrowLeft
-                  className="h-4 w-4"
-                  aria-hidden="true"
-                />
-                Back to Reviews
-              </Link>
-            </div>
-          </section>
-        </main>
-
-        <Footer />
+        <StateMessage
+          code="404"
+          title="Review not found"
+          message="This review may no longer be available or the link may be incorrect."
+        />
       </>
     );
   }
 
+  /* --------------------------------------------------
+     MAIN
+
+     NOTE (sticky intro): the page wrapper uses
+     overflow-x-clip, NOT overflow-x-hidden, so
+     position: sticky keeps working in the review form.
+  -------------------------------------------------- */
   return (
-    <>
-      <Helmet>
-        <title>{seoTitle}</title>
+    <div className="min-h-screen overflow-x-clip bg-background">
+      {/* ==================================================
+          SEO
+      ================================================== */}
+      <Seo
+        title={d.seoTitle}
+        description={d.seoDescription}
+        canonical={d.canonicalUrl}
+        path={d.path}
+        image={d.image || undefined}
+        type="article"
+        jsonLd={structuredData}
+      />
 
-        <meta
-          name="description"
-          content={seoDescription}
-        />
-
-        <meta
-          name="robots"
-          content="index,follow"
-        />
-
-        <link
-          rel="canonical"
-          href={canonicalUrl}
-        />
-
-        <meta
-          property="og:type"
-          content="article"
-        />
-
-        <meta
-          property="og:title"
-          content={seoTitle}
-        />
-
-        <meta
-          property="og:description"
-          content={seoDescription}
-        />
-
-        <meta
-          property="og:url"
-          content={canonicalUrl}
-        />
-
-        {reviewImage && (
-          <meta
-            property="og:image"
-            content={reviewImage}
+      <main>
+        {/* ------------------------------ Hero ------------------------------ */}
+        <section className="relative overflow-hidden border-b border-divider bg-petal-gradient">
+          <div
+            aria-hidden="true"
+            className="pointer-events-none absolute -right-24 -top-24 h-72 w-72 rounded-full bg-primary/10 blur-3xl"
           />
-        )}
-
-        <meta
-          name="twitter:card"
-          content={reviewImage ? "summary_large_image" : "summary"}
-        />
-
-        <meta
-          name="twitter:title"
-          content={seoTitle}
-        />
-
-        <meta
-          name="twitter:description"
-          content={seoDescription}
-        />
-
-        {reviewImage && (
-          <meta
-            name="twitter:image"
-            content={reviewImage}
+          <div
+            aria-hidden="true"
+            className="pointer-events-none absolute -bottom-32 -left-20 h-80 w-80 rounded-full bg-secondary/20 blur-3xl"
           />
-        )}
-
-        {structuredData && (
-          <script type="application/ld+json">
-            {JSON.stringify(structuredData)}
-          </script>
-        )}
-      </Helmet>
-
-      <main className="min-h-screen bg-surface">
-        {/* =====================================================
-            HERO
-        ====================================================== */}
-
-        <section className="relative overflow-hidden bg-navy">
-          <div className="absolute inset-0 bg-gradient-to-br from-navy via-navy to-[#03112D]" />
-
-          <div className="absolute -right-24 -top-24 h-72 w-72 rounded-full bg-orange/10 blur-3xl" />
-
-          <div className="absolute -bottom-32 -left-20 h-80 w-80 rounded-full bg-white/5 blur-3xl" />
 
           <div className="relative mx-auto max-w-7xl px-4 py-8 sm:px-6 sm:py-12 lg:px-8 lg:py-16">
             <Link
               to="/reviews"
-              className="inline-flex items-center gap-2 text-sm font-semibold text-white/80 transition hover:text-white"
+              className="group inline-flex items-center gap-2 text-sm font-semibold text-text-secondary transition hover:text-primary"
             >
               <ArrowLeft
-                className="h-4 w-4"
+                className="h-4 w-4 transition-transform duration-300 group-hover:-translate-x-0.5"
                 aria-hidden="true"
               />
               All Reviews
             </Link>
 
-            <div className="mt-8 grid items-center gap-10 lg:grid-cols-[1fr_420px]">
-              {/* Hero text */}
-
-              <div className="max-w-3xl">
-                <div className="inline-flex items-center gap-2 rounded-full border border-white/10 bg-white/10 px-3 py-1.5 text-xs font-semibold uppercase tracking-[0.14em] text-white/80">
+            <div className="mt-8 grid items-center gap-10 lg:grid-cols-[minmax(0,1fr)_400px]">
+              <div className="min-w-0 max-w-3xl">
+                <span className="inline-flex rounded-full border border-divider bg-card px-3 py-1.5 text-xs font-semibold uppercase tracking-[0.14em] text-primary-dark">
                   Traveller Review
-                </div>
+                </span>
 
-                <div className="mt-5 flex items-center gap-2 text-sm font-semibold text-orange">
-                  <MapPin
-                    className="h-4 w-4"
-                    aria-hidden="true"
-                  />
+                {d.destination && (
+                  <p className="mt-5 flex items-center gap-2 text-sm font-semibold text-primary">
+                    <MapPin className="h-4 w-4" aria-hidden="true" />
+                    {d.destination}
+                  </p>
+                )}
 
-                  <span>{destination}</span>
-                </div>
-
-                <h1 className="mt-3 text-3xl font-bold leading-tight text-white sm:text-4xl lg:text-5xl">
-                  {customerName}'s experience in{" "}
-                  {destination}
+                <h1 className="mt-3 break-words font-display text-4xl font-semibold leading-tight text-text-display sm:text-5xl lg:text-6xl">
+                  {d.heading}
                 </h1>
 
-                <div className="mt-5 flex flex-wrap items-center gap-4">
+                <div className="mt-5 flex flex-wrap items-center gap-x-4 gap-y-2">
                   <div className="flex items-center gap-3">
-                    <StarRating
-                      rating={rating}
-                      size="large"
-                    />
-
-                    <span className="font-bold text-white">
-                      {rating}/5
+                    <StarRating rating={d.rating} size="lg" />
+                    <span className="font-bold text-text-dark">
+                      {d.rating}/5
                     </span>
                   </div>
 
-                  {customerCity && (
-                    <>
-                      <span className="hidden h-5 w-px bg-white/20 sm:block" />
-
-                      <span className="text-sm text-white/70">
-                        Traveller from {customerCity}
-                      </span>
-                    </>
+                  {d.customerCity && (
+                    <span className="text-sm text-text-secondary">
+                      Traveller from {d.customerCity}
+                    </span>
                   )}
 
-                  {createdDate && (
-                    <>
-                      <span className="hidden h-5 w-px bg-white/20 sm:block" />
-
-                      <span className="text-sm text-white/60">
-                        {createdDate}
-                      </span>
-                    </>
+                  {d.createdDate && (
+                    <span className="text-sm text-muted">{d.createdDate}</span>
                   )}
                 </div>
 
-                <blockquote className="mt-7 max-w-2xl text-lg leading-8 text-white/80 sm:text-xl">
-                  “{truncateText(reviewText, 260)}”
+                <blockquote className="mt-7 max-w-2xl border-l-4 border-secondary pl-5 font-display text-xl leading-8 text-text sm:text-2xl sm:leading-9">
+                  “{truncateText(d.reviewText, 260)}”
                 </blockquote>
 
-                <div className="mt-8">
-                  <button
-                    type="button"
-                    onClick={scrollToReviewForm}
-                    className="inline-flex items-center justify-center gap-2 rounded-xl bg-orange px-5 py-3 font-bold text-white shadow-lg shadow-orange/20 transition hover:bg-orange/90 hover:shadow-xl"
-                  >
-                    Share Your Experience
-                    <ArrowRight
-                      className="h-4 w-4"
-                      aria-hidden="true"
-                    />
-                  </button>
-                </div>
+                <button
+                  type="button"
+                  onClick={scrollToReviewForm}
+                  className="group mt-8 inline-flex min-h-[44px] items-center justify-center gap-2 rounded-full bg-accent px-6 py-3 text-sm font-semibold text-white shadow-brand transition-all duration-200 hover:-translate-y-0.5 hover:bg-accent-hover focus:outline-none focus:ring-2 focus:ring-accent/40 focus:ring-offset-2"
+                >
+                  Share Your Experience
+                  <ArrowRight className="arrow-shift h-4 w-4" aria-hidden="true" />
+                </button>
               </div>
 
-              {/* Hero customer card */}
-
-              <div className="rounded-3xl border border-white/10 bg-white/10 p-4 backdrop-blur-sm">
-                <div className="overflow-hidden rounded-2xl bg-white">
-                  {reviewImage ? (
+              <div className="rounded-3xl border border-divider bg-card p-3 shadow-travel-card">
+                <div className="overflow-hidden rounded-2xl">
+                  {d.image ? (
                     <img
-                      src={reviewImage}
-                      alt={`${customerName}'s review of ${destination}`}
+                      src={d.image}
+                      alt={`${d.customerName}'s review photo`}
                       className="h-64 w-full object-cover sm:h-72"
+                      fetchPriority="high"
+                      decoding="async"
                     />
                   ) : (
-                    <div className="flex h-64 items-center justify-center bg-gradient-to-br from-navy to-[#0B2559] sm:h-72">
-                      <div className="flex h-24 w-24 items-center justify-center rounded-full bg-white text-3xl font-bold text-navy shadow-xl">
-                        {getInitials(customerName)}
+                    <div className="flex h-64 items-center justify-center bg-petal-gradient sm:h-72">
+                      <div className="flex h-24 w-24 items-center justify-center rounded-full bg-card font-display text-4xl font-semibold text-primary-dark shadow-brand">
+                        {getInitials(d.customerName)}
                       </div>
                     </div>
                   )}
+                </div>
 
-                  <div className="p-5">
-                    <div className="flex items-center gap-3">
-                      <div className="flex h-11 w-11 items-center justify-center rounded-full bg-navy text-sm font-bold text-white">
-                        {getInitials(customerName)}
-                      </div>
-
-                      <div>
-                        <p className="font-bold text-navy">
-                          {customerName}
-                        </p>
-
-                        {customerCity && (
-                          <p className="text-sm text-gray-500">
-                            {customerCity}
-                          </p>
-                        )}
-                      </div>
-                    </div>
-
-                    <div className="mt-4 flex items-center justify-between">
-                      <span className="text-sm font-semibold text-gray-500">
-                        Rated their experience
-                      </span>
-
-                      <div className="flex items-center gap-1">
-                        <StarRating rating={rating} />
-
-                        <span className="ml-1 text-sm font-bold text-navy">
-                          {rating}/5
-                        </span>
-                      </div>
-                    </div>
+                <div className="flex items-center gap-3 p-4">
+                  <Avatar name={d.customerName} className="h-11 w-11 text-sm" />
+                  <div className="min-w-0">
+                    <p className="truncate font-bold text-text-dark">
+                      {d.customerName}
+                    </p>
+                    {d.customerCity && (
+                      <p className="truncate text-sm text-muted">
+                        {d.customerCity}
+                      </p>
+                    )}
                   </div>
                 </div>
               </div>
@@ -1032,491 +1018,105 @@ function scrollToReviewForm() {
           </div>
         </section>
 
-        {/* =====================================================
-            FULL REVIEW
-        ====================================================== */}
-
+        {/* --------------------------- Full review -------------------------- */}
         <section className="mx-auto max-w-4xl px-4 py-12 sm:px-6 lg:px-8 lg:py-16">
-          <div className="rounded-3xl border border-navy/10 bg-white p-6 shadow-sm sm:p-8 lg:p-10">
+          <div className="rounded-3xl border border-divider bg-card p-6 shadow-travel-card sm:p-8 lg:p-10">
             <div className="flex flex-col gap-5 sm:flex-row sm:items-end sm:justify-between">
               <div>
-                <p className="text-sm font-bold uppercase tracking-[0.15em] text-orange">
+                <p className="text-sm font-semibold uppercase tracking-[0.15em] text-primary">
                   Full Review
                 </p>
-
-                <h2 className="mt-2 text-2xl font-bold text-navy sm:text-3xl">
-                  {customerName}'s travel experience
+                <h2 className="mt-2 font-display text-3xl font-semibold text-text-dark">
+                  {d.customerName}'s travel experience
                 </h2>
               </div>
 
               <div className="flex items-center gap-2">
-                <StarRating rating={rating} />
-
-                <span className="text-sm font-bold text-navy">
-                  {rating}/5
+                <StarRating rating={d.rating} />
+                <span className="text-sm font-bold text-text-dark">
+                  {d.rating}/5
                 </span>
               </div>
             </div>
 
-            <div className="mt-7 border-t border-navy/10 pt-7">
-              <p className="whitespace-pre-line text-base leading-8 text-gray-700 sm:text-lg">
-                {reviewText}
-              </p>
-            </div>
+            <p className="mt-7 whitespace-pre-line break-words border-t border-divider pt-7 text-base leading-8 text-text sm:text-lg">
+              {d.reviewText}
+            </p>
 
-            <div className="mt-8 flex flex-wrap items-center gap-4 rounded-2xl bg-surface p-4">
-              <div className="flex h-12 w-12 items-center justify-center rounded-full bg-navy text-sm font-bold text-white">
-                {getInitials(customerName)}
-              </div>
-
-              <div>
-                <p className="font-bold text-navy">
-                  {customerName}
-                </p>
-
-                <p className="text-sm text-gray-500">
-                  {customerCity
-                    ? `${customerCity} · ${destination}`
-                    : destination}
+            <div className="mt-8 flex items-center gap-4 rounded-2xl bg-surface p-4">
+              <Avatar name={d.customerName} />
+              <div className="min-w-0">
+                <p className="font-bold text-text-dark">{d.customerName}</p>
+                <p className="truncate text-sm text-muted">
+                  {[d.customerCity, d.destination].filter(Boolean).join(" · ")}
                 </p>
               </div>
             </div>
           </div>
         </section>
 
-        {/* =====================================================
-            SHARE REVIEW FORM
-        ====================================================== */}
-
+        {/* --------------------------- Review form -------------------------- */}
         <section
-            id="share-review"
-            className="scroll-mt-0 bg-white py-14 sm:py-16 lg:py-20"
-          >
-          <div className="mx-auto max-w-5xl px-4 sm:px-6 lg:px-8">
-            <div className="grid gap-10 lg:grid-cols-[0.8fr_1.2fr] lg:items-start">
-              {/* Form intro */}
-
-              <div className="lg:sticky lg:top-8">
-                <p className="text-sm font-bold uppercase tracking-[0.15em] text-orange">
-                  Your Valuable Review
-                </p>
-
-                <h2 className="mt-2 text-3xl font-bold leading-tight text-navy sm:text-4xl">
-                  Share your travel experience
-                </h2>
-
-                <p className="mt-4 leading-7 text-gray-600">
-                  Your experience can help other travellers
-                  discover their next destination with
-                  confidence.
-                </p>
-
-                <div className="mt-7 space-y-4">
-                  <div className="flex gap-3">
-                    <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-navy/5 text-navy">
-                      <MapPin
-                        className="h-4 w-4"
-                        aria-hidden="true"
-                      />
-                    </div>
-
-                    <div>
-                      <p className="font-semibold text-navy">
-                        Tell us where you travelled
-                      </p>
-
-                      <p className="mt-1 text-sm leading-6 text-gray-500">
-                        Select the place you visited and tell
-                        us about your experience.
-                      </p>
-                    </div>
-                  </div>
-
-                  <div className="flex gap-3">
-                    <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-navy/5 text-navy">
-                      <Star
-                        className="h-4 w-4"
-                        aria-hidden="true"
-                      />
-                    </div>
-
-                    <div>
-                      <p className="font-semibold text-navy">
-                        Rate your experience
-                      </p>
-
-                      <p className="mt-1 text-sm leading-6 text-gray-500">
-                        Give a rating from 1 to 5 stars.
-                      </p>
-                    </div>
-                  </div>
-
-                  <div className="flex gap-3">
-                    <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-navy/5 text-navy">
-                      <CheckCircle2
-                        className="h-4 w-4"
-                        aria-hidden="true"
-                      />
-                    </div>
-
-                    <div>
-                      <p className="font-semibold text-navy">
-                        Help future travellers
-                      </p>
-
-                      <p className="mt-1 text-sm leading-6 text-gray-500">
-                        Reviews are checked before being
-                        published.
-                      </p>
-                    </div>
-                  </div>
-                </div>
-              </div>
-
-              {/* Form */}
-
-              <div className="rounded-3xl border border-navy/10 bg-surface p-5 shadow-sm sm:p-7">
-                <form
-                  onSubmit={handleSubmit}
-                  className="space-y-5"
-                >
-                  {successMessage && (
-                    <div
-                      role="status"
-                      className="rounded-2xl border border-green-200 bg-green-50 p-4 text-sm font-medium leading-6 text-green-800"
-                    >
-                      {successMessage}
-                    </div>
-                  )}
-
-                  {formError && (
-                    <div
-                      role="alert"
-                      className="rounded-2xl border border-red-200 bg-red-50 p-4 text-sm font-medium leading-6 text-red-700"
-                    >
-                      {formError}
-                    </div>
-                  )}
-
-                  <div className="grid gap-5 sm:grid-cols-2">
-                    <div>
-                      <label
-                        htmlFor="review-customer-name"
-                        className="mb-2 block text-sm font-semibold text-navy"
-                      >
-                        Your Name
-                      </label>
-
-                      <div className="relative">
-                        <UserRound
-                          className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-gray-400"
-                          aria-hidden="true"
-                        />
-
-                        <input
-                          id="review-customer-name"
-                          type="text"
-                          value={form.customer_name}
-                          onChange={(event) =>
-                            updateForm(
-                              "customer_name",
-                              event.target.value
-                            )
-                          }
-                          placeholder="Enter your name"
-                          maxLength={100}
-                          required
-                          className="w-full rounded-xl border border-navy/10 bg-white py-3 pl-10 pr-4 text-sm text-navy outline-none transition placeholder:text-gray-400 focus:border-orange focus:ring-2 focus:ring-orange/10"
-                        />
-                      </div>
-                    </div>
-
-                    <div>
-                      <label
-                        htmlFor="review-customer-city"
-                        className="mb-2 block text-sm font-semibold text-navy"
-                      >
-                        Your City
-                      </label>
-
-                      <div className="relative">
-                        <MapPin
-                          className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-gray-400"
-                          aria-hidden="true"
-                        />
-
-                        <input
-                          id="review-customer-city"
-                          type="text"
-                          value={form.customer_city}
-                          onChange={(event) =>
-                            updateForm(
-                              "customer_city",
-                              event.target.value
-                            )
-                          }
-                          placeholder="Enter your city"
-                          maxLength={100}
-                          required
-                          className="w-full rounded-xl border border-navy/10 bg-white py-3 pl-10 pr-4 text-sm text-navy outline-none transition placeholder:text-gray-400 focus:border-orange focus:ring-2 focus:ring-orange/10"
-                        />
-                      </div>
-                    </div>
-                  </div>
-
-                  <div>
-                    <label
-                      htmlFor="review-destination"
-                      className="mb-2 block text-sm font-semibold text-navy"
-                    >
-                      Place Visited
-                    </label>
-
-                    <div className="relative">
-                      <MapPin
-                        className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-gray-400"
-                        aria-hidden="true"
-                      />
-
-                      <select
-                        id="review-destination"
-                        value={form.destination}
-                        onChange={(event) =>
-                          updateForm(
-                            "destination",
-                            event.target.value
-                          )
-                        }
-                        required
-                        disabled={loadingDestinations}
-                        className="w-full appearance-none rounded-xl border border-navy/10 bg-white py-3 pl-10 pr-10 text-sm text-navy outline-none transition focus:border-orange focus:ring-2 focus:ring-orange/10 disabled:cursor-not-allowed disabled:opacity-60"
-                      >
-                        <option value="">
-                          {loadingDestinations
-                            ? "Loading destinations..."
-                            : "Select the place you visited"}
-                        </option>
-
-                        {destinations.map((place) => (
-                          <option
-                            key={place}
-                            value={place}
-                          >
-                            {place}
-                          </option>
-                        ))}
-                      </select>
-
-                      <ChevronDown
-                        className="pointer-events-none absolute right-3 top-1/2 h-4 w-4 -translate-y-1/2 text-gray-400"
-                        aria-hidden="true"
-                      />
-                    </div>
-                  </div>
-
-                  <div>
-                    <span className="mb-2 block text-sm font-semibold text-navy">
-                      Your Rating
-                    </span>
-
-                    <div className="rounded-xl border border-navy/10 bg-white px-4 py-3">
-                      <FormStarRating
-                        value={Number(form.rating)}
-                        onChange={(value) =>
-                          updateForm("rating", value)
-                        }
-                      />
-                    </div>
-                  </div>
-
-                  <div>
-                    <label
-                      htmlFor="review-message"
-                      className="mb-2 block text-sm font-semibold text-navy"
-                    >
-                      Your Review
-                    </label>
-
-                    <textarea
-                      id="review-message"
-                      value={form.review}
-                      onChange={(event) =>
-                        updateForm(
-                          "review",
-                          event.target.value
-                        )
-                      }
-                      placeholder="Tell us about your travel experience..."
-                      rows={7}
-                      minLength={10}
-                      maxLength={3000}
-                      required
-                      className="w-full resize-y rounded-xl border border-navy/10 bg-white px-4 py-3 text-sm leading-6 text-navy outline-none transition placeholder:text-gray-400 focus:border-orange focus:ring-2 focus:ring-orange/10"
-                    />
-
-                    <div className="mt-1 flex justify-end text-xs text-gray-400">
-                      {form.review.length}/3000
-                    </div>
-                  </div>
-
-                  <div>
-                    <span className="mb-2 block text-sm font-semibold text-navy">
-                      Add a Photo{" "}
-                      <span className="font-normal text-gray-400">
-                        (optional)
-                      </span>
-                    </span>
-
-                    {!imagePreview ? (
-                      <label className="flex cursor-pointer flex-col items-center justify-center rounded-xl border-2 border-dashed border-navy/10 bg-white px-5 py-8 text-center transition hover:border-orange/40 hover:bg-orange/5">
-                        <ImageIcon
-                          className="h-7 w-7 text-gray-400"
-                          aria-hidden="true"
-                        />
-
-                        <span className="mt-2 text-sm font-semibold text-navy">
-                          Choose a travel photo
-                        </span>
-
-                        <span className="mt-1 text-xs text-gray-400">
-                          JPG, PNG, WEBP · Maximum 5MB
-                        </span>
-
-                        <input
-                          type="file"
-                          accept="image/*"
-                          onChange={handleImageChange}
-                          className="sr-only"
-                        />
-                      </label>
-                    ) : (
-                      <div className="relative overflow-hidden rounded-xl border border-navy/10 bg-white p-3">
-                        <img
-                          src={imagePreview}
-                          alt="Selected review"
-                          className="h-48 w-full rounded-lg object-cover"
-                        />
-
-                        <button
-                          type="button"
-                          onClick={removeImage}
-                          className="absolute right-5 top-5 flex h-9 w-9 items-center justify-center rounded-full bg-black/70 text-white transition hover:bg-black"
-                          aria-label="Remove selected image"
-                        >
-                          <X
-                            className="h-4 w-4"
-                            aria-hidden="true"
-                          />
-                        </button>
-                      </div>
-                    )}
-                  </div>
-
-                  <button
-                    type="submit"
-                    disabled={submitting}
-                    className="inline-flex w-full items-center justify-center gap-2 rounded-xl bg-navy px-5 py-3.5 text-sm font-bold text-white transition hover:bg-navy/90 disabled:cursor-not-allowed disabled:opacity-60"
-                  >
-                    {submitting ? (
-                      <>
-                        <span className="h-4 w-4 animate-spin rounded-full border-2 border-white/30 border-t-white" />
-                        Submitting...
-                      </>
-                    ) : (
-                      <>
-                        Submit Your Review
-                        <Send
-                          className="h-4 w-4"
-                          aria-hidden="true"
-                        />
-                      </>
-                    )}
-                  </button>
-
-                  <p className="text-center text-xs leading-5 text-gray-500">
-                    Your review will be checked by our team
-                    before it appears publicly.
-                  </p>
-                </form>
-              </div>
-            </div>
+          id="share-review"
+          className="scroll-mt-[calc(var(--top-info-height,0px)+6rem)] border-y border-divider bg-surface-soft"
+        >
+          <div className="mx-auto w-full max-w-6xl px-4 py-12 sm:px-6 sm:py-14 lg:px-8 lg:py-16">
+            <ReviewForm />
           </div>
         </section>
 
-        {/* =====================================================
-            MORE REVIEWS
-        ====================================================== */}
-
+        {/* --------------------------- More reviews ------------------------- */}
         <section className="mx-auto max-w-7xl px-4 py-14 sm:px-6 lg:px-8 lg:py-20">
           <div className="flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
             <div>
-              <p className="text-sm font-bold uppercase tracking-[0.15em] text-orange">
+              <p className="text-sm font-semibold uppercase tracking-[0.15em] text-primary">
                 Traveller Stories
               </p>
-
-              <h2 className="mt-2 text-2xl font-bold text-navy sm:text-3xl">
+              <h2 className="mt-2 font-display text-3xl font-semibold text-text-dark">
                 More Traveller Reviews
               </h2>
-
-              <p className="mt-2 max-w-2xl text-gray-600">
-                Discover experiences shared by other travellers
-                who explored destinations with On a Trip Holiday.
+              <p className="mt-2 max-w-2xl text-text">
+                Discover experiences shared by other travellers who explored
+                destinations with {BRAND_NAME}.
               </p>
             </div>
 
             <Link
               to="/reviews"
-              className="inline-flex items-center gap-2 text-sm font-bold text-navy transition hover:text-orange"
+              className="group inline-flex items-center gap-1.5 whitespace-nowrap text-sm font-semibold text-link"
             >
-              View All Reviews
-              <ArrowRight
-                className="h-4 w-4"
-                aria-hidden="true"
-              />
+              <span className="link-reveal">View All Reviews</span>
+              <ArrowRight className="arrow-shift h-4 w-4" aria-hidden="true" />
             </Link>
           </div>
 
-          {loadingRelated ? (
+          {loadingRelated && (
             <div className="mt-8 grid gap-5 sm:grid-cols-2 lg:grid-cols-3">
-              {[1, 2, 3].map((item) => (
-                <div
-                  key={item}
-                  className="h-64 animate-pulse rounded-2xl bg-white"
-                />
+              {[1, 2, 3].map((key) => (
+                <ReviewCardSkeleton key={key} />
               ))}
             </div>
-          ) : relatedReviews.length > 0 ? (
-            <div className="mt-8 grid gap-5 sm:grid-cols-2 lg:grid-cols-3">
+          )}
+
+          {!loadingRelated && relatedReviews.length > 0 && (
+            <RevealGroup className="mt-8 grid gap-5 sm:grid-cols-2 lg:grid-cols-3">
               {relatedReviews.map((item) => (
-                <RelatedReviewCard
-                  key={item.id || item.slug}
-                  item={item}
-                />
+                <ReviewCard key={item.id ?? item.slug} item={item} />
               ))}
-            </div>
-          ) : (
-            <div className="mt-8 rounded-2xl border border-navy/10 bg-white p-8 text-center">
-              <p className="text-gray-600">
-                More traveller reviews will appear here as they
-                are published.
-              </p>
+            </RevealGroup>
+          )}
+
+          {!loadingRelated && relatedReviews.length === 0 && (
+            <div className="mt-8 rounded-2xl border border-dashed border-divider bg-card p-8 text-center text-text">
+              More traveller reviews will appear here as they are published.
             </div>
           )}
         </section>
-
-        {/* =====================================================
-            FAQ
-        ====================================================== */}
-
-        <FAQSection />
-
-        {/* =====================================================
-            FOOTER
-        ====================================================== */}
-
-        <Footer />
       </main>
-    </>
+
+      <FAQSection />
+      <Footer />
+    </div>
   );
 }
 
@@ -1550,6 +1150,1108 @@ function scrollToReviewForm() {
 
 
 
+
+
+
+
+
+
+
+
+// import { useMemo, useState } from "react";
+// import { Link, useParams } from "react-router-dom";
+// import {
+//   ArrowLeft,
+//   ArrowRight,
+//   CheckCircle2,
+//   ChevronDown,
+//   MapPin,
+//   MessageSquareHeart,
+//   Quote,
+//   Send,
+//   Star,
+// } from "lucide-react";
+// import { Helmet } from "react-helmet-async";
+
+// import {
+//   createTestimonial,
+//   getMostVisited,
+//   getTestimonialBySlug,
+//   getTestimonials,
+// } from "../../api/content";
+// import { useQuery } from "../../hooks/useQuery";
+// import ImageUploadField from "../../components/admin/ImageUploadField";
+// import FAQSection from "../../components/FAQSection";
+// import Footer from "../../components/Footer";
+
+
+// /* ==================================================================
+//    HELPERS
+// ================================================================== */
+
+// const BRAND_NAME = "Manyara Prive Vacations";
+
+// /* Set VITE_SITE_URL in .env (for example https://www.yourdomain.com)
+//    so canonical links and SEO data use your real domain. */
+
+// const SITE_URL = (
+//   import.meta.env.VITE_SITE_URL || window.location.origin
+// ).replace(/\/$/, "");
+
+// const cleanText = (value) =>
+//   typeof value === "string" ? value.trim() : "";
+
+// function getSafeArray(value) {
+//   if (Array.isArray(value)) return value;
+
+//   for (const key of ["items", "data", "results"]) {
+//     if (Array.isArray(value?.[key])) return value[key];
+//   }
+
+//   return [];
+// }
+
+// function getImageUrl(image) {
+//   return typeof image === "string" ? image.trim() : cleanText(image?.url);
+// }
+
+// function getInitials(name) {
+//   return (
+//     cleanText(name)
+//       .split(/\s+/)
+//       .filter(Boolean)
+//       .map((part) => part[0])
+//       .slice(0, 2)
+//       .join("")
+//       .toUpperCase() || "MP"
+//   );
+// }
+
+// function formatDate(dateValue) {
+//   if (!dateValue) return "";
+
+//   const date = new Date(dateValue);
+//   if (Number.isNaN(date.getTime())) return "";
+
+//   return new Intl.DateTimeFormat("en-IN", {
+//     day: "numeric",
+//     month: "long",
+//     year: "numeric",
+//   }).format(date);
+// }
+
+// function truncateText(text, maxLength = 155) {
+//   const value = cleanText(text);
+//   if (value.length <= maxLength) return value;
+//   return `${value.slice(0, maxLength).trim()}...`;
+// }
+
+// /* Unique destination names, ordered by display_order.
+//    Works on a copy, so the cached API data is never changed. */
+
+// function buildDestinations(data) {
+//   const seen = new Set();
+
+//   return getSafeArray(data)
+//     .map((item) => ({
+//       item,
+//       name:
+//         cleanText(item?.place_name) ||
+//         cleanText(item?.destination) ||
+//         cleanText(item?.name) ||
+//         cleanText(item?.title),
+//     }))
+//     .filter(({ name }) => name)
+//     .sort(
+//       (a, b) =>
+//         Number(a.item?.display_order ?? 0) - Number(b.item?.display_order ?? 0)
+//     )
+//     .filter(({ name }) => {
+//       const key = name.toLowerCase();
+//       if (seen.has(key)) return false;
+//       seen.add(key);
+//       return true;
+//     })
+//     .map(({ name }) => name);
+// }
+
+// /* The form section uses scroll-mt so it stops below the fixed header. */
+
+// function scrollToReviewForm() {
+//   document
+//     .getElementById("share-review")
+//     ?.scrollIntoView({ behavior: "smooth", block: "start" });
+// }
+
+// /* ==================================================================
+//    STAR RATING
+// ================================================================== */
+
+// const SIZES = {
+//   md: "h-4 w-4",
+//   lg: "h-5 w-5 sm:h-6 sm:w-6",
+// };
+
+// /* Read-only stars. Filled stars use the bright logo pink (decorative),
+//    so the rating is also always available as text via aria-label. */
+// function StarRating({ rating = 0, size = "md" }) {
+//   const value = Math.min(5, Math.max(0, Number(rating) || 0));
+
+//   return (
+//     <div
+//       className="flex items-center gap-0.5"
+//       role="img"
+//       aria-label={`${value} out of 5 stars`}
+//     >
+//       {[1, 2, 3, 4, 5].map((star) => (
+//         <Star
+//           key={star}
+//           className={`${SIZES[size]} ${
+//             star <= value ? "text-accent-bright" : "text-ink-300"
+//           }`}
+//           fill={star <= value ? "currentColor" : "none"}
+//           strokeWidth={1.5}
+//           aria-hidden="true"
+//         />
+//       ))}
+//     </div>
+//   );
+// }
+
+// /* ==================================================================
+//    REVIEW CARD
+// ================================================================== */
+
+// /* One review card. Used on the reviews page and in "More reviews". */
+// function ReviewCard({ item }) {
+//   const name = cleanText(item?.customer_name) || "Traveller";
+//   const meta = [cleanText(item?.customer_city), cleanText(item?.destination)]
+//     .filter(Boolean)
+//     .join(" · ");
+//   const imageUrl = getImageUrl(item?.image);
+//   const slug = cleanText(item?.slug);
+
+//   return (
+//     <article className="relative flex h-full flex-col gap-4 rounded-2xl border border-divider bg-card p-6 shadow-travel-card transition hover:-translate-y-0.5 hover:border-secondary-light hover:shadow-travel-hover">
+//       <Quote
+//         className="absolute right-5 top-5 h-8 w-8 text-primary-lighter"
+//         aria-hidden="true"
+//       />
+
+//       <StarRating rating={item?.rating} />
+
+//       <p className="line-clamp-6 flex-1 text-sm leading-relaxed text-text">
+//         “{cleanText(item?.review)}”
+//       </p>
+
+//       <div className="flex items-center gap-3 border-t border-divider pt-4">
+//         {imageUrl ? (
+//           <img
+//             src={imageUrl}
+//             alt={`${name} profile`}
+//             loading="lazy"
+//             decoding="async"
+//             className="h-11 w-11 shrink-0 rounded-full object-cover"
+//           />
+//         ) : (
+//           <div
+//             className="flex h-11 w-11 shrink-0 items-center justify-center rounded-full bg-primary-lighter text-xs font-semibold text-primary-dark"
+//             aria-hidden="true"
+//           >
+//             {getInitials(name)}
+//           </div>
+//         )}
+
+//         <div className="min-w-0 flex-1">
+//           <p className="truncate text-sm font-semibold text-text-dark">{name}</p>
+//           {meta && <p className="mt-0.5 truncate text-xs text-muted">{meta}</p>}
+//         </div>
+//       </div>
+
+//       {slug && (
+//         <Link
+//           to={`/reviews/${encodeURIComponent(slug)}`}
+//           aria-label={`Read full review from ${name}`}
+//           className="inline-flex w-full items-center justify-center gap-2 rounded-xl border border-divider bg-surface px-4 py-2.5 text-sm font-semibold text-text-dark transition hover:border-primary hover:bg-primary hover:text-white"
+//         >
+//           Read Full Review
+//           <ArrowRight className="h-4 w-4" aria-hidden="true" />
+//         </Link>
+//       )}
+//     </article>
+//   );
+// }
+
+// /* Shown only on the very first visit, before anything is cached. */
+// function ReviewCardSkeleton() {
+//   return (
+//     <div
+//       className="flex h-64 animate-pulse flex-col gap-4 rounded-2xl border border-divider bg-card p-6"
+//       aria-hidden="true"
+//     >
+//       <div className="h-4 w-24 rounded bg-primary/10" />
+//       <div className="flex-1 space-y-2.5">
+//         <div className="h-3 rounded bg-primary/10" />
+//         <div className="h-3 rounded bg-primary/10" />
+//         <div className="h-3 w-3/4 rounded bg-primary/10" />
+//       </div>
+//       <div className="flex items-center gap-3 border-t border-divider pt-4">
+//         <div className="h-11 w-11 rounded-full bg-primary/10" />
+//         <div className="h-3 w-32 rounded bg-primary/10" />
+//       </div>
+//     </div>
+//   );
+// }
+
+// /* ==================================================================
+//    REVIEW FORM
+// ================================================================== */
+
+// const INITIAL_FORM = {
+//   customer_name: "",
+//   customer_city: "",
+//   destination: "",
+//   rating: 5,
+//   review: "",
+// };
+
+// const INTRO_POINTS = [
+//   {
+//     Icon: MessageSquareHeart,
+//     title: "Share your experience",
+//     text: "Tell us what made your trip memorable.",
+//   },
+//   {
+//     Icon: Star,
+//     title: "Rate your experience",
+//     text: "Give your honest rating from 1 to 5 stars.",
+//   },
+//   {
+//     Icon: CheckCircle2,
+//     title: "Pending approval",
+//     text: "Reviews are checked before appearing publicly.",
+//   },
+// ];
+
+// /* One class string for every text field keeps the form consistent. */
+// const INPUT =
+//   "w-full rounded-xl border border-border bg-input px-4 py-3 text-sm text-text-dark outline-none transition placeholder:text-placeholder focus:border-primary focus:ring-2 focus:ring-primary/30 disabled:cursor-not-allowed disabled:bg-surface";
+
+// const BUTTON =
+//   "inline-flex items-center justify-center gap-2 rounded-xl bg-primary px-5 py-3 font-semibold text-white transition hover:bg-primary-hover disabled:cursor-not-allowed disabled:opacity-60";
+
+// /* ------------------------------------------------------------------ */
+
+// function Field({ id, label, hint, children }) {
+//   return (
+//     <div>
+//       <label
+//         htmlFor={id}
+//         className="mb-1.5 block text-sm font-medium text-text-dark"
+//       >
+//         {label}
+//       </label>
+//       {children}
+//       {hint}
+//     </div>
+//   );
+// }
+
+// function RatingInput({ value, onChange, disabled }) {
+//   return (
+//     <div
+//       role="radiogroup"
+//       aria-label="Your rating"
+//       className="flex items-center gap-1"
+//     >
+//       {[1, 2, 3, 4, 5].map((star) => (
+//         <button
+//           key={star}
+//           type="button"
+//           role="radio"
+//           aria-checked={value === star}
+//           aria-label={`${star} star${star > 1 ? "s" : ""}`}
+//           disabled={disabled}
+//           onClick={() => onChange(star)}
+//           className="rounded-lg p-1 transition hover:scale-110 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/30 disabled:cursor-not-allowed"
+//         >
+//           <Star
+//             className={`h-7 w-7 ${
+//               star <= value ? "text-accent-bright" : "text-ink-300"
+//             }`}
+//             fill={star <= value ? "currentColor" : "none"}
+//             strokeWidth={1.5}
+//             aria-hidden="true"
+//           />
+//         </button>
+//       ))}
+//     </div>
+//   );
+// }
+
+// function SuccessCard({ onReset }) {
+//   return (
+//     <div
+//       role="status"
+//       className="rounded-3xl border border-success/30 bg-success-bg p-6 text-center sm:p-8 lg:p-10"
+//     >
+//       <div className="mx-auto flex h-16 w-16 items-center justify-center rounded-full bg-card">
+//         <CheckCircle2 className="h-9 w-9 text-success" aria-hidden="true" />
+//       </div>
+
+//       <h2 className="mt-6 font-display text-3xl font-semibold text-text-dark">
+//         Thank You!
+//       </h2>
+
+//       <p className="mt-3 text-base font-medium text-text">
+//         Thank you for your valuable response!
+//       </p>
+
+//       <p className="mx-auto mt-3 max-w-xl text-sm leading-relaxed text-text-secondary">
+//         Your review has been submitted successfully. Our team will review your
+//         response before publishing it on our website.
+//       </p>
+
+//       <div className="mx-auto mt-5 max-w-sm rounded-xl border border-divider bg-card px-4 py-3">
+//         <p className="text-xs text-muted">Review status</p>
+//         <p className="mt-1 text-sm font-semibold text-text-dark">
+//           Pending approval
+//         </p>
+//       </div>
+
+//       <button type="button" onClick={onReset} className={`${BUTTON} mt-6 px-7`}>
+//         <MessageSquareHeart className="h-4 w-4" aria-hidden="true" />
+//         Write Another Review
+//       </button>
+//     </div>
+//   );
+// }
+
+// /* ------------------------------------------------------------------ */
+
+// function ReviewForm() {
+//   const {
+//     data: mostVisited,
+//     loading: loadingPlaces,
+//     error: placesError,
+//   } = useQuery(getMostVisited);
+
+//   const places = useMemo(() => buildDestinations(mostVisited), [mostVisited]);
+
+//   const [form, setForm] = useState(INITIAL_FORM);
+//   const [image, setImage] = useState(null);
+//   const [submitting, setSubmitting] = useState(false);
+//   const [error, setError] = useState("");
+//   const [success, setSuccess] = useState(false);
+
+//   const update = (field, value) => {
+//     setForm((previous) => ({ ...previous, [field]: value }));
+//     setError("");
+//   };
+
+//   const handleChange = (event) => update(event.target.name, event.target.value);
+
+//   function validate() {
+//     if (cleanText(form.customer_name).length < 2)
+//       return "Please enter your name.";
+//     if (cleanText(form.customer_city).length < 2)
+//       return "Please enter your city.";
+//     if (!cleanText(form.destination))
+//       return "Please select the place you visited.";
+//     if (cleanText(form.review).length < 10)
+//       return "Please write at least 10 characters for your review.";
+//     return "";
+//   }
+
+//   async function handleSubmit(event) {
+//     event.preventDefault();
+//     if (submitting) return;
+
+//     const problem = validate();
+//     if (problem) {
+//       setError(problem);
+//       return;
+//     }
+
+//     setSubmitting(true);
+//     setError("");
+
+//     try {
+//       await createTestimonial({
+//         customer_name: cleanText(form.customer_name),
+//         customer_city: cleanText(form.customer_city),
+//         destination: cleanText(form.destination),
+//         rating: Number(form.rating),
+//         review: cleanText(form.review),
+//         image: image || null,
+//       });
+
+//       setForm(INITIAL_FORM);
+//       setImage(null);
+//       setSuccess(true);
+//     } catch (err) {
+//       console.error("Failed to submit testimonial:", err);
+
+//       const detail = err?.response?.data?.detail;
+//       setError(
+//         typeof detail === "string"
+//           ? detail
+//           : "Unable to submit your review. Please try again."
+//       );
+//     } finally {
+//       setSubmitting(false);
+//     }
+//   }
+
+//   if (success) return <SuccessCard onReset={() => setSuccess(false)} />;
+
+//   const noPlaces = !loadingPlaces && places.length === 0;
+
+//   let placeHint = "Select the destination you actually visited.";
+//   if (noPlaces) placeHint = "No destinations are currently available.";
+//   if (noPlaces && placesError)
+//     placeHint = "Unable to load available destinations. Please try again.";
+
+//   return (
+//     <div className="grid w-full grid-cols-1 gap-8 lg:grid-cols-[minmax(0,0.75fr)_minmax(0,1.25fr)] lg:items-start lg:gap-12">
+//       {/* ---------------------------- Intro ---------------------------- */}
+//       <div className="min-w-0 lg:sticky lg:top-[calc(var(--top-info-height,0px)+6rem)]">
+//         <p className="text-xs font-semibold uppercase tracking-wide text-primary">
+//           Share your experience
+//         </p>
+
+//         <h2 className="mt-2 font-display text-3xl font-semibold leading-tight text-text-dark sm:text-4xl">
+//           Your Valuable Review
+//         </h2>
+
+//         <p className="mt-4 max-w-lg text-sm leading-7 text-text sm:text-base">
+//           Tell future travellers about your experience with {BRAND_NAME}.
+//         </p>
+
+//         <ul className="mt-7 space-y-5">
+//           {INTRO_POINTS.map(({ Icon, title, text }) => (
+//             <li key={title} className="flex items-start gap-3">
+//               <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-primary-lighter text-primary">
+//                 <Icon className="h-4 w-4" aria-hidden="true" />
+//               </span>
+//               <div className="min-w-0">
+//                 <p className="text-sm font-semibold text-text-dark">{title}</p>
+//                 <p className="mt-1 text-xs leading-5 text-muted">{text}</p>
+//               </div>
+//             </li>
+//           ))}
+//         </ul>
+//       </div>
+
+//       {/* ----------------------------- Form ---------------------------- */}
+//       <form
+//         onSubmit={handleSubmit}
+//         className="min-w-0 space-y-5 rounded-3xl border border-divider bg-card p-5 shadow-travel-card sm:p-7 lg:p-8"
+//       >
+//         <div className="grid gap-5 sm:grid-cols-2">
+//           <Field id="customer_name" label="Your Name">
+//             <input
+//               id="customer_name"
+//               name="customer_name"
+//               type="text"
+//               value={form.customer_name}
+//               onChange={handleChange}
+//               required
+//               minLength={2}
+//               maxLength={100}
+//               placeholder="Enter your name"
+//               autoComplete="name"
+//               disabled={submitting}
+//               className={INPUT}
+//             />
+//           </Field>
+
+//           <Field id="customer_city" label="Your City">
+//             <input
+//               id="customer_city"
+//               name="customer_city"
+//               type="text"
+//               value={form.customer_city}
+//               onChange={handleChange}
+//               required
+//               minLength={2}
+//               maxLength={100}
+//               placeholder="e.g. Hyderabad"
+//               autoComplete="address-level2"
+//               disabled={submitting}
+//               className={INPUT}
+//             />
+//           </Field>
+//         </div>
+
+//         <Field
+//           id="destination"
+//           label="Place Visited"
+//           hint={
+//             <p
+//               className={`mt-1.5 text-xs ${
+//                 noPlaces && placesError ? "text-error-text" : "text-muted"
+//               }`}
+//             >
+//               {placeHint}
+//             </p>
+//           }
+//         >
+//           <div className="relative">
+//             <select
+//               id="destination"
+//               name="destination"
+//               value={form.destination}
+//               onChange={handleChange}
+//               required
+//               disabled={submitting || loadingPlaces}
+//               className={`${INPUT} appearance-none pr-10`}
+//             >
+//               <option value="">
+//                 {loadingPlaces
+//                   ? "Loading destinations..."
+//                   : "Select the place you visited"}
+//               </option>
+//               {places.map((place) => (
+//                 <option key={place} value={place}>
+//                   {place}
+//                 </option>
+//               ))}
+//             </select>
+//             <ChevronDown
+//               className="pointer-events-none absolute right-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted"
+//               aria-hidden="true"
+//             />
+//           </div>
+//         </Field>
+
+//         <div>
+//           <p className="mb-1.5 text-sm font-medium text-text-dark">
+//             Your Rating
+//           </p>
+//           <RatingInput
+//             value={Number(form.rating)}
+//             onChange={(value) => update("rating", value)}
+//             disabled={submitting}
+//           />
+//           <p className="mt-1 text-xs text-muted">{form.rating} out of 5 stars</p>
+//         </div>
+
+//         <Field id="review" label="Your Review">
+//           <textarea
+//             id="review"
+//             name="review"
+//             value={form.review}
+//             onChange={handleChange}
+//             required
+//             minLength={10}
+//             maxLength={3000}
+//             rows={6}
+//             placeholder="Tell us about your travel experience..."
+//             disabled={submitting}
+//             className={`${INPUT} resize-y leading-6`}
+//           />
+//           <div className="mt-1 flex justify-end text-xs text-muted">
+//             {form.review.length}/3000
+//           </div>
+//         </Field>
+
+//         <div className="rounded-2xl border border-divider bg-surface p-4 sm:p-5">
+//           <ImageUploadField
+//             value={image}
+//             onChange={setImage}
+//             label="Your Photo (Optional)"
+//           />
+//           <p className="mt-2 text-xs text-muted">
+//             You can share a photo from your trip, but this is completely
+//             optional.
+//           </p>
+//         </div>
+
+//         {error && (
+//           <div
+//             role="alert"
+//             className="rounded-xl border border-error/30 bg-error-bg px-4 py-3 text-sm text-error-text"
+//           >
+//             {error}
+//           </div>
+//         )}
+
+//         <button
+//           type="submit"
+//           disabled={submitting || loadingPlaces || places.length === 0}
+//           className={`${BUTTON} w-full`}
+//         >
+//           {submitting ? (
+//             <>
+//               <span
+//                 className="h-4 w-4 animate-spin rounded-full border-2 border-white/30 border-t-white"
+//                 aria-hidden="true"
+//               />
+//               Submitting...
+//             </>
+//           ) : (
+//             <>
+//               <Send className="h-4 w-4" aria-hidden="true" />
+//               Submit Your Review
+//             </>
+//           )}
+//         </button>
+
+//         <p className="text-center text-xs text-muted">
+//           Your review will be published after our team reviews it.
+//         </p>
+//       </form>
+//     </div>
+//   );
+// }
+
+// /* ==================================================================
+//    PAGE
+// ================================================================== */
+
+// /* ------------------------------------------------------------------ */
+// /* Pure helpers                                                        */
+// /* ------------------------------------------------------------------ */
+
+// function getReviewDetails(review, slug) {
+//   const customerName = cleanText(review?.customer_name) || "Traveller";
+//   const destination = cleanText(review?.destination);
+//   const reviewText = cleanText(review?.review);
+//   const canonicalSlug = cleanText(review?.slug) || cleanText(slug);
+
+//   return {
+//     customerName,
+//     customerCity: cleanText(review?.customer_city),
+//     destination,
+//     reviewText,
+//     rating: Number(review?.rating) || 0,
+//     image: getImageUrl(review?.image),
+//     createdAt: review?.created_at,
+//     createdDate: formatDate(review?.created_at),
+//     canonicalUrl: `${SITE_URL}/reviews/${encodeURIComponent(canonicalSlug)}`,
+//     heading: destination
+//       ? `${customerName}'s experience in ${destination}`
+//       : `${customerName}'s travel experience`,
+//     seoTitle: `${customerName}'s ${
+//       destination ? `${destination} ` : ""
+//     }Travel Review | ${BRAND_NAME}`,
+//     seoDescription:
+//       truncateText(reviewText, 155) ||
+//       `Read ${customerName}'s travel experience with ${BRAND_NAME}.`,
+//   };
+// }
+
+// function buildStructuredData(d) {
+//   const url = d.canonicalUrl;
+
+//   const reviewSchema = {
+//     "@type": "Review",
+//     "@id": `${url}#review`,
+//     url,
+//     name: `${d.customerName}'s ${d.destination || "travel"} review`,
+//     author: { "@type": "Person", name: d.customerName },
+//     reviewBody: d.reviewText,
+//     reviewRating: {
+//       "@type": "Rating",
+//       ratingValue: d.rating,
+//       bestRating: 5,
+//       worstRating: 1,
+//     },
+//     itemReviewed: d.destination
+//       ? { "@type": "Place", name: d.destination }
+//       : { "@type": "TravelAgency", name: BRAND_NAME },
+//   };
+
+//   if (d.createdDate) reviewSchema.datePublished = d.createdAt;
+//   if (d.image) reviewSchema.image = d.image;
+
+//   return {
+//     "@context": "https://schema.org",
+//     "@graph": [
+//       {
+//         "@type": "WebPage",
+//         "@id": `${url}#webpage`,
+//         url,
+//         name: d.seoTitle,
+//         description: d.seoDescription,
+//         mainEntity: { "@id": `${url}#review` },
+//         breadcrumb: { "@id": `${url}#breadcrumb` },
+//       },
+//       reviewSchema,
+//       {
+//         "@type": "BreadcrumbList",
+//         "@id": `${url}#breadcrumb`,
+//         itemListElement: [
+//           { "@type": "ListItem", position: 1, name: "Home", item: SITE_URL },
+//           {
+//             "@type": "ListItem",
+//             position: 2,
+//             name: "Reviews",
+//             item: `${SITE_URL}/reviews`,
+//           },
+//           {
+//             "@type": "ListItem",
+//             position: 3,
+//             name: d.destination
+//               ? `${d.customerName} – ${d.destination}`
+//               : d.customerName,
+//             item: url,
+//           },
+//         ],
+//       },
+//     ],
+//   };
+// }
+
+// /* ------------------------------------------------------------------ */
+// /* Small components                                                    */
+// /* ------------------------------------------------------------------ */
+
+// function Avatar({ name, className = "h-12 w-12 text-sm" }) {
+//   return (
+//     <div
+//       className={`flex shrink-0 items-center justify-center rounded-full bg-primary-lighter font-bold text-primary-dark ${className}`}
+//       aria-hidden="true"
+//     >
+//       {getInitials(name)}
+//     </div>
+//   );
+// }
+
+// /* First visit only: a light placeholder the same shape as the page. */
+// function DetailSkeleton() {
+//   return (
+//     <main
+//       className="min-h-screen bg-background"
+//       role="status"
+//       aria-label="Loading review"
+//     >
+//       <div className="mx-auto max-w-7xl animate-pulse px-4 py-12 sm:px-6 lg:px-8 lg:py-16">
+//         <div className="h-4 w-24 rounded bg-primary/10" />
+//         <div className="mt-8 grid gap-10 lg:grid-cols-[1fr_400px]">
+//           <div className="space-y-4">
+//             <div className="h-6 w-40 rounded-full bg-primary/10" />
+//             <div className="h-10 w-3/4 rounded bg-primary/10" />
+//             <div className="h-10 w-1/2 rounded bg-primary/10" />
+//             <div className="h-24 rounded bg-primary/10" />
+//           </div>
+//           <div className="h-80 rounded-3xl bg-primary/10" />
+//         </div>
+//       </div>
+//     </main>
+//   );
+// }
+
+// function NotFound({ message }) {
+//   return (
+//     <>
+//       <Helmet>
+//         <title>{`Review Not Found | ${BRAND_NAME}`}</title>
+//         <meta name="robots" content="noindex,follow" />
+//       </Helmet>
+
+//       <main className="min-h-screen bg-background">
+//         <section className="mx-auto flex min-h-[70vh] max-w-3xl items-center justify-center px-4 py-16 text-center">
+//           <div>
+//             <div className="mx-auto flex h-16 w-16 items-center justify-center rounded-full bg-primary-lighter">
+//               <MapPin className="h-7 w-7 text-primary" aria-hidden="true" />
+//             </div>
+
+//             <h1 className="mt-6 font-display text-4xl font-semibold text-text-dark">
+//               {message}
+//             </h1>
+
+//             <p className="mx-auto mt-3 max-w-xl text-text">
+//               This review may no longer be available or the link may be
+//               incorrect.
+//             </p>
+
+//             <Link to="/reviews" className={`${BUTTON} mt-7`}>
+//               <ArrowLeft className="h-4 w-4" aria-hidden="true" />
+//               Back to Reviews
+//             </Link>
+//           </div>
+//         </section>
+//       </main>
+
+//       <Footer />
+//     </>
+//   );
+// }
+
+// /* ------------------------------------------------------------------ */
+// /* Page                                                                */
+// /* ------------------------------------------------------------------ */
+
+// export default function ReviewDetail() {
+//   const { slug } = useParams();
+
+//   const { data: review, loading, error } = useQuery(getTestimonialBySlug, slug);
+//   const { data: allReviews, loading: loadingRelated } =
+//     useQuery(getTestimonials);
+
+//   const d = useMemo(() => getReviewDetails(review, slug), [review, slug]);
+//   const structuredData = useMemo(
+//     () => (review ? buildStructuredData(d) : null),
+//     [review, d]
+//   );
+
+//   const relatedReviews = useMemo(() => {
+//     const currentSlug = cleanText(review?.slug);
+
+//     return getSafeArray(allReviews)
+//       .filter((item) => {
+//         const itemSlug = cleanText(item?.slug);
+//         if (!itemSlug || itemSlug === currentSlug) return false;
+//         return !(review?.id && item?.id === review.id);
+//       })
+//       .slice(0, 6);
+//   }, [allReviews, review]);
+
+//   if (loading) return <DetailSkeleton />;
+
+//   if (!review) {
+//     return (
+//       <NotFound
+//         message={
+//           error?.response?.status === 404 || !error
+//             ? "Review not found"
+//             : "Unable to load this review right now"
+//         }
+//       />
+//     );
+//   }
+
+//   return (
+//     <>
+//       <Helmet>
+//         <title>{d.seoTitle}</title>
+//         <meta name="description" content={d.seoDescription} />
+//         <meta name="robots" content="index,follow" />
+//         <link rel="canonical" href={d.canonicalUrl} />
+
+//         <meta property="og:type" content="article" />
+//         <meta property="og:site_name" content={BRAND_NAME} />
+//         <meta property="og:title" content={d.seoTitle} />
+//         <meta property="og:description" content={d.seoDescription} />
+//         <meta property="og:url" content={d.canonicalUrl} />
+//         {d.image && <meta property="og:image" content={d.image} />}
+
+//         <meta
+//           name="twitter:card"
+//           content={d.image ? "summary_large_image" : "summary"}
+//         />
+//         <meta name="twitter:title" content={d.seoTitle} />
+//         <meta name="twitter:description" content={d.seoDescription} />
+//         {d.image && <meta name="twitter:image" content={d.image} />}
+
+//         <script type="application/ld+json">
+//           {JSON.stringify(structuredData)}
+//         </script>
+//       </Helmet>
+
+//       <main className="min-h-screen bg-background">
+//         {/* ------------------------------ Hero ------------------------------ */}
+//         <section className="relative overflow-hidden border-b border-divider bg-petal-gradient">
+//           <div
+//             aria-hidden="true"
+//             className="pointer-events-none absolute -right-24 -top-24 h-72 w-72 rounded-full bg-primary/10 blur-3xl"
+//           />
+//           <div
+//             aria-hidden="true"
+//             className="pointer-events-none absolute -bottom-32 -left-20 h-80 w-80 rounded-full bg-secondary/20 blur-3xl"
+//           />
+
+//           <div className="relative mx-auto max-w-7xl px-4 py-8 sm:px-6 sm:py-12 lg:px-8 lg:py-16">
+//             <Link
+//               to="/reviews"
+//               className="inline-flex items-center gap-2 text-sm font-semibold text-text-secondary transition hover:text-primary"
+//             >
+//               <ArrowLeft className="h-4 w-4" aria-hidden="true" />
+//               All Reviews
+//             </Link>
+
+//             <div className="mt-8 grid items-center gap-10 lg:grid-cols-[minmax(0,1fr)_400px]">
+//               <div className="min-w-0 max-w-3xl">
+//                 <span className="inline-flex rounded-full border border-divider bg-card px-3 py-1.5 text-xs font-semibold uppercase tracking-[0.14em] text-primary-dark">
+//                   Traveller Review
+//                 </span>
+
+//                 {d.destination && (
+//                   <p className="mt-5 flex items-center gap-2 text-sm font-semibold text-primary">
+//                     <MapPin className="h-4 w-4" aria-hidden="true" />
+//                     {d.destination}
+//                   </p>
+//                 )}
+
+//                 <h1 className="mt-3 break-words font-display text-4xl font-semibold leading-tight text-text-display sm:text-5xl lg:text-6xl">
+//                   {d.heading}
+//                 </h1>
+
+//                 <div className="mt-5 flex flex-wrap items-center gap-x-4 gap-y-2">
+//                   <div className="flex items-center gap-3">
+//                     <StarRating rating={d.rating} size="lg" />
+//                     <span className="font-bold text-text-dark">
+//                       {d.rating}/5
+//                     </span>
+//                   </div>
+
+//                   {d.customerCity && (
+//                     <span className="text-sm text-text-secondary">
+//                       Traveller from {d.customerCity}
+//                     </span>
+//                   )}
+
+//                   {d.createdDate && (
+//                     <span className="text-sm text-muted">{d.createdDate}</span>
+//                   )}
+//                 </div>
+
+//                 <blockquote className="mt-7 max-w-2xl border-l-4 border-secondary pl-5 font-display text-xl leading-8 text-text sm:text-2xl sm:leading-9">
+//                   “{truncateText(d.reviewText, 260)}”
+//                 </blockquote>
+
+//                 <button
+//                   type="button"
+//                   onClick={scrollToReviewForm}
+//                   className={`${BUTTON} mt-8 px-6 shadow-brand`}
+//                 >
+//                   Share Your Experience
+//                   <ArrowRight className="h-4 w-4" aria-hidden="true" />
+//                 </button>
+//               </div>
+
+//               <div className="rounded-3xl border border-divider bg-card p-3 shadow-travel-card">
+//                 <div className="overflow-hidden rounded-2xl">
+//                   {d.image ? (
+//                     <img
+//                       src={d.image}
+//                       alt={`${d.customerName}'s review photo`}
+//                       className="h-64 w-full object-cover sm:h-72"
+//                     />
+//                   ) : (
+//                     <div className="flex h-64 items-center justify-center bg-petal-gradient sm:h-72">
+//                       <div className="flex h-24 w-24 items-center justify-center rounded-full bg-card font-display text-4xl font-semibold text-primary-dark shadow-brand">
+//                         {getInitials(d.customerName)}
+//                       </div>
+//                     </div>
+//                   )}
+//                 </div>
+
+//                 <div className="flex items-center gap-3 p-4">
+//                   <Avatar name={d.customerName} className="h-11 w-11 text-sm" />
+//                   <div className="min-w-0">
+//                     <p className="truncate font-bold text-text-dark">
+//                       {d.customerName}
+//                     </p>
+//                     {d.customerCity && (
+//                       <p className="truncate text-sm text-muted">
+//                         {d.customerCity}
+//                       </p>
+//                     )}
+//                   </div>
+//                 </div>
+//               </div>
+//             </div>
+//           </div>
+//         </section>
+
+//         {/* --------------------------- Full review -------------------------- */}
+//         <section className="mx-auto max-w-4xl px-4 py-12 sm:px-6 lg:px-8 lg:py-16">
+//           <div className="rounded-3xl border border-divider bg-card p-6 shadow-travel-card sm:p-8 lg:p-10">
+//             <div className="flex flex-col gap-5 sm:flex-row sm:items-end sm:justify-between">
+//               <div>
+//                 <p className="text-sm font-semibold uppercase tracking-[0.15em] text-primary">
+//                   Full Review
+//                 </p>
+//                 <h2 className="mt-2 font-display text-3xl font-semibold text-text-dark">
+//                   {d.customerName}'s travel experience
+//                 </h2>
+//               </div>
+
+//               <div className="flex items-center gap-2">
+//                 <StarRating rating={d.rating} />
+//                 <span className="text-sm font-bold text-text-dark">
+//                   {d.rating}/5
+//                 </span>
+//               </div>
+//             </div>
+
+//             <p className="mt-7 whitespace-pre-line border-t border-divider pt-7 text-base leading-8 text-text sm:text-lg">
+//               {d.reviewText}
+//             </p>
+
+//             <div className="mt-8 flex items-center gap-4 rounded-2xl bg-surface p-4">
+//               <Avatar name={d.customerName} />
+//               <div className="min-w-0">
+//                 <p className="font-bold text-text-dark">{d.customerName}</p>
+//                 <p className="truncate text-sm text-muted">
+//                   {[d.customerCity, d.destination].filter(Boolean).join(" · ")}
+//                 </p>
+//               </div>
+//             </div>
+//           </div>
+//         </section>
+
+//         {/* --------------------------- Review form -------------------------- */}
+//         <section
+//           id="share-review"
+//           className="scroll-mt-[calc(var(--top-info-height,0px)+6rem)] border-y border-divider bg-surface-soft"
+//         >
+//           <div className="mx-auto w-full max-w-6xl px-4 py-12 sm:px-6 sm:py-14 lg:px-8 lg:py-16">
+//             <ReviewForm />
+//           </div>
+//         </section>
+
+//         {/* --------------------------- More reviews ------------------------- */}
+//         <section className="mx-auto max-w-7xl px-4 py-14 sm:px-6 lg:px-8 lg:py-20">
+//           <div className="flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
+//             <div>
+//               <p className="text-sm font-semibold uppercase tracking-[0.15em] text-primary">
+//                 Traveller Stories
+//               </p>
+//               <h2 className="mt-2 font-display text-3xl font-semibold text-text-dark">
+//                 More Traveller Reviews
+//               </h2>
+//               <p className="mt-2 max-w-2xl text-text">
+//                 Discover experiences shared by other travellers who explored
+//                 destinations with {BRAND_NAME}.
+//               </p>
+//             </div>
+
+//             <Link
+//               to="/reviews"
+//               className="inline-flex items-center gap-2 text-sm font-bold text-primary transition hover:text-primary-hover"
+//             >
+//               View All Reviews
+//               <ArrowRight className="h-4 w-4" aria-hidden="true" />
+//             </Link>
+//           </div>
+
+//           <div className="mt-8 grid gap-5 sm:grid-cols-2 lg:grid-cols-3">
+//             {loadingRelated &&
+//               [1, 2, 3].map((key) => <ReviewCardSkeleton key={key} />)}
+
+//             {!loadingRelated &&
+//               relatedReviews.map((item) => (
+//                 <ReviewCard key={item.id ?? item.slug} item={item} />
+//               ))}
+//           </div>
+
+//           {!loadingRelated && relatedReviews.length === 0 && (
+//             <div className="mt-8 rounded-2xl border border-divider bg-card p-8 text-center text-text">
+//               More traveller reviews will appear here as they are published.
+//             </div>
+//           )}
+//         </section>
+//       </main>
+
+//       <FAQSection />
+//       <Footer />
+//     </>
+//   );
+// }
 
 
 

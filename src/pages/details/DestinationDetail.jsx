@@ -1,30 +1,43 @@
 
-import React, { useEffect, useMemo, useState } from "react";
+
+import { useMemo, useState } from "react";
 import { Link, useParams } from "react-router-dom";
 import {
   ArrowLeft,
   CalendarDays,
   ChevronRight,
+  Clock3,
   IndianRupee,
   MapPin,
   MessageSquareHeart,
-  Send,
-  Clock3,
   PackageCheck,
+  Send,
 } from "lucide-react";
 
 import { getMostVisitedBySlug } from "../../api/content";
+import { useQuery } from "../../hooks/useQuery";
 import Footer from "../../components/Footer";
 import Seo, { SITE_URL } from "../../components/Seo";
 import EnquiryForm from "../EnquiryForm";
 import FAQSection from "../../components/FAQSection";
 import ReviewFormModal from "../../components/ReviewFormModal";
+import { RevealGroup } from "../../components/Reveal";
 
-/* --------------------------------------------------
+/* =========================================================
+   BRAND
+========================================================= */
+
+const BRAND_NAME = "Manyara Prive Vacations";
+
+/* Same button language as PackageDetail */
+const PRIMARY_BUTTON =
+  "inline-flex items-center justify-center gap-2 rounded-xl bg-primary font-semibold text-white transition-colors hover:bg-primary-hover disabled:cursor-not-allowed disabled:opacity-70";
+
+/* =========================================================
    HELPERS
    (outside the component so they are stable and can be
    used inside useMemo without dependency warnings)
--------------------------------------------------- */
+========================================================= */
 
 const getImageUrl = (image) => {
   if (!image) return "";
@@ -73,65 +86,124 @@ const formatPrice = (price) => {
   return `₹${numericPrice.toLocaleString("en-IN")}`;
 };
 
+const hasNumericPrice = (price) =>
+  price !== null &&
+  price !== undefined &&
+  price !== "" &&
+  !Number.isNaN(Number(price));
+
+/* =========================================================
+   SMALL COMPONENTS
+========================================================= */
+
+function InfoCard({ icon, label, title, children }) {
+  return (
+    <div className="min-w-0 rounded-2xl border border-divider bg-surface p-5 sm:p-6">
+      <div className="mb-3 flex items-center gap-3">
+        <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-card text-primary sm:h-11 sm:w-11">
+          {icon}
+        </div>
+
+        <div className="min-w-0">
+          <p className="text-xs text-muted sm:text-sm">{label}</p>
+          <h3 className="text-base font-bold text-text-dark sm:text-lg">
+            {title}
+          </h3>
+        </div>
+      </div>
+
+      {children}
+    </div>
+  );
+}
+
+/* Shown only when nothing is cached yet. */
+function DetailSkeleton() {
+  return (
+    <div
+      className="min-h-screen bg-background"
+      role="status"
+      aria-label="Loading destination"
+    >
+      <div className="mx-auto max-w-7xl animate-pulse px-4 py-10 sm:px-6 lg:px-8">
+        <div className="h-4 w-48 rounded bg-primary/10" />
+        <div className="mt-8 h-5 w-40 rounded bg-primary/10" />
+        <div className="mt-4 h-12 w-3/4 rounded bg-primary/10" />
+        <div className="mt-8 aspect-[4/3] rounded-3xl bg-primary/10 sm:aspect-[16/9] lg:aspect-[21/9]" />
+
+        <div className="mt-10 grid gap-10 lg:grid-cols-[minmax(0,1fr)_360px]">
+          <div className="space-y-4">
+            <div className="h-8 w-56 rounded bg-primary/10" />
+            <div className="h-4 rounded bg-primary/10" />
+            <div className="h-4 rounded bg-primary/10" />
+            <div className="h-4 w-2/3 rounded bg-primary/10" />
+          </div>
+          <div className="h-72 rounded-3xl bg-primary/10" />
+        </div>
+      </div>
+    </div>
+  );
+}
+
+/* Missing destination (404) vs. a real loading problem */
+function StateMessage({ title, message, code, onRetry }) {
+  return (
+    <div className="min-h-[100dvh] bg-background">
+      <div className="mx-auto max-w-3xl px-4 py-20 text-center sm:px-6 sm:py-28">
+        {code && (
+          <p className="mb-3 font-display text-6xl font-semibold text-primary/30">
+            {code}
+          </p>
+        )}
+
+        <h1 className="mb-3 font-display text-3xl font-semibold text-text-dark sm:text-4xl">
+          {title}
+        </h1>
+
+        <p className="mx-auto mb-8 max-w-md text-text">{message}</p>
+
+        <div className="flex flex-col items-center justify-center gap-3 sm:flex-row">
+          {onRetry && (
+            <button
+              type="button"
+              onClick={onRetry}
+              className={`${PRIMARY_BUTTON} min-h-[44px] px-5 py-3`}
+            >
+              Try again
+            </button>
+          )}
+
+          <Link
+            to="/destinations"
+            className="inline-flex min-h-[44px] items-center justify-center gap-2 rounded-xl border border-border px-5 py-3 font-semibold text-text-dark transition-colors hover:border-primary hover:bg-surface-soft hover:text-primary"
+          >
+            <ArrowLeft className="h-4 w-4" aria-hidden="true" />
+            Back to Destinations
+          </Link>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+/* =========================================================
+   PAGE
+========================================================= */
+
 export default function DestinationDetail() {
   const { slug } = useParams();
 
-  const [place, setPlace] = useState(null);
-  const [loading, setLoading] = useState(true);
-  const [notFound, setNotFound] = useState(false);
+  /* Cached data: instant on repeat visits, updates itself when fresh. */
+  const { data, loading, error } = useQuery(getMostVisitedBySlug, slug);
+  const place = data?.data ?? data ?? null;
+
   const [enquiry, setEnquiry] = useState(false);
   const [showReview, setShowReview] = useState(false);
 
-  /* --------------------------------------------------
-     FETCH DESTINATION
-  -------------------------------------------------- */
-  useEffect(() => {
-    let mounted = true;
-
-    const loadDestination = async () => {
-      try {
-        setLoading(true);
-        setNotFound(false);
-        setPlace(null);
-
-        const data = await getMostVisitedBySlug(slug);
-
-        if (!mounted) return;
-
-        if (!data) {
-          setNotFound(true);
-          return;
-        }
-
-        setPlace(data);
-      } catch (error) {
-        console.error("Failed to load destination:", error);
-
-        if (mounted) {
-          setNotFound(true);
-        }
-      } finally {
-        if (mounted) {
-          setLoading(false);
-        }
-      }
-    };
-
-    if (slug) {
-      loadDestination();
-    } else {
-      setLoading(false);
-      setNotFound(true);
-    }
-
-    return () => {
-      mounted = false;
-    };
-  }, [slug]);
-
-  const destinationImage = useMemo(() => {
-    return getImageUrl(place?.image);
-  }, [place]);
+  const destinationImage = useMemo(
+    () => getImageUrl(place?.image),
+    [place]
+  );
 
   /* --------------------------------------------------
      PACKAGES
@@ -142,13 +214,12 @@ export default function DestinationDetail() {
     }
 
     return place.packages
-      .filter((pkg) => {
-        return (
+      .filter(
+        (pkg) =>
           pkg?.status === undefined ||
           pkg?.status === "published" ||
           pkg?.is_published === true
-        );
-      })
+      )
       .filter((pkg) => Boolean(pkg?.slug))
       .sort((a, b) => {
         // Most Visited packages first
@@ -162,8 +233,7 @@ export default function DestinationDetail() {
 
         // Then display order
         const orderDiff =
-          Number(a?.display_order ?? 0) -
-          Number(b?.display_order ?? 0);
+          Number(a?.display_order ?? 0) - Number(b?.display_order ?? 0);
 
         if (orderDiff !== 0) {
           return orderDiff;
@@ -178,15 +248,13 @@ export default function DestinationDetail() {
      PRICE
   -------------------------------------------------- */
   const hasStartingPrice =
-    place?.starting_from !== null && place?.starting_from !== undefined;
+    place?.starting_from !== null &&
+    place?.starting_from !== undefined &&
+    place?.starting_from !== "";
 
-  const formattedPrice = useMemo(() => {
-    if (!hasStartingPrice) {
-      return "Contact us";
-    }
-
-    return formatPrice(place.starting_from);
-  }, [place, hasStartingPrice]);
+  const formattedPrice = hasStartingPrice
+    ? formatPrice(place.starting_from)
+    : "Contact us";
 
   /* --------------------------------------------------
      SEO
@@ -195,7 +263,7 @@ export default function DestinationDetail() {
     place?.description ||
     `Explore ${
       place?.place_name || "this destination"
-    } with On a Trip Holidays. Discover travel experiences, attractions, best time to visit and holiday packages.`;
+    } with ${BRAND_NAME}. Discover travel experiences, attractions, best time to visit and holiday packages.`;
 
   const destinationPath = `/destinations/${place?.slug || slug}`;
 
@@ -216,13 +284,17 @@ export default function DestinationDetail() {
         url: `${SITE_URL}/packages/${pkg.slug}`,
         description: pkg?.description || undefined,
         image: image ? [image] : undefined,
-        offers: {
-          "@type": "Offer",
-          price: pkg?.price,
-          priceCurrency: "INR",
-          url: `${SITE_URL}/packages/${pkg.slug}`,
-          availability: "https://schema.org/InStock",
-        },
+        ...(hasNumericPrice(pkg?.price)
+          ? {
+              offers: {
+                "@type": "Offer",
+                price: Number(pkg.price),
+                priceCurrency: "INR",
+                url: `${SITE_URL}/packages/${pkg.slug}`,
+                availability: "https://schema.org/InStock",
+              },
+            }
+          : {}),
       };
     });
 
@@ -285,51 +357,34 @@ export default function DestinationDetail() {
   ]);
 
   /* --------------------------------------------------
-     LOADING
+     STATES
   -------------------------------------------------- */
   if (loading) {
-    return (
-      <div className="min-h-[100dvh] bg-white flex items-center justify-center px-4">
-        <div className="text-center">
-          <div className="w-10 h-10 border-4 border-gray-200 border-t-[#F22727] rounded-full animate-spin mx-auto mb-4" />
-
-          <p className="text-sm sm:text-base text-gray-600">
-            Loading destination...
-          </p>
-        </div>
-      </div>
-    );
+    return <DetailSkeleton />;
   }
 
-  /* --------------------------------------------------
-     NOT FOUND
-  -------------------------------------------------- */
-  if (notFound || !place) {
+  if (!place) {
+    const status = error?.response?.status;
+    const isRealError = Boolean(error) && status !== 404;
+
+    if (isRealError) {
+      console.error("Failed to load destination:", slug, error);
+
+      return (
+        <StateMessage
+          title="We couldn't load this destination"
+          message="Something went wrong while loading this page. Please check your connection and try again."
+          onRetry={() => window.location.reload()}
+        />
+      );
+    }
+
     return (
-      <div className="min-h-[100dvh] bg-white flex items-center justify-center px-4">
-        <div className="text-center max-w-md w-full">
-          <div className="text-5xl sm:text-6xl font-bold text-[#102040] mb-4">
-            404
-          </div>
-
-          <h1 className="text-xl sm:text-2xl font-bold text-[#0D0D0D] mb-3">
-            Destination not found
-          </h1>
-
-          <p className="text-sm sm:text-base text-gray-600 mb-6 leading-6">
-            The destination you are looking for may have been
-            removed or is no longer available.
-          </p>
-
-          <Link
-            to="/destinations"
-            className="inline-flex items-center justify-center gap-2 bg-[#F22727] text-white px-5 sm:px-6 py-3 rounded-xl font-semibold hover:bg-[#D94141] transition"
-          >
-            <ArrowLeft size={18} />
-            Back to Destinations
-          </Link>
-        </div>
-      </div>
+      <StateMessage
+        code="404"
+        title="Destination not found"
+        message="The destination you are looking for may have been removed or is no longer available."
+      />
     );
   }
 
@@ -340,16 +395,15 @@ export default function DestinationDetail() {
      overflow-x-clip, NOT overflow-x-hidden.
      overflow-x-hidden turns the wrapper into a scroll
      container, which silently breaks position: sticky on
-     the sidebar. overflow-x-clip stops horizontal overflow
-     without doing that.
+     the sidebar.
   -------------------------------------------------- */
   return (
-    <div className="min-h-screen bg-white overflow-x-clip">
+    <div className="min-h-screen overflow-x-clip bg-background">
       {/* ==================================================
           SEO
       ================================================== */}
       <Seo
-        title={`${place.place_name} — Travel Guide & Packages | OnaTrip Holidays`}
+        title={`${place.place_name} — Travel Guide & Packages | ${BRAND_NAME}`}
         description={seoDescription}
         canonical={canonicalUrl}
         path={destinationPath}
@@ -361,39 +415,34 @@ export default function DestinationDetail() {
       {/* ==================================================
           BREADCRUMB
       ================================================== */}
-      <section className="bg-gray-50 border-b border-gray-100">
-        <div className="w-full max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+      <section className="border-b border-divider bg-surface">
+        <div className="mx-auto w-full max-w-7xl px-4 sm:px-6 lg:px-8">
           <nav
             aria-label="Breadcrumb"
-            className="flex items-center gap-1.5 sm:gap-2 py-3 sm:py-4 text-xs sm:text-sm text-gray-500 overflow-hidden"
+            className="flex items-center gap-1.5 overflow-hidden py-3 text-xs text-muted sm:gap-2 sm:py-4 sm:text-sm"
           >
-            <Link
-              to="/"
-              className="flex-shrink-0 hover:text-[#F22727] transition"
-            >
+            <Link to="/" className="shrink-0 transition hover:text-primary">
               Home
             </Link>
 
             <ChevronRight
-              size={14}
-              className="flex-shrink-0"
+              className="h-3.5 w-3.5 shrink-0"
               aria-hidden="true"
             />
 
             <Link
               to="/destinations"
-              className="flex-shrink-0 hover:text-[#F22727] transition"
+              className="shrink-0 transition hover:text-primary"
             >
               Destinations
             </Link>
 
             <ChevronRight
-              size={14}
-              className="flex-shrink-0"
+              className="h-3.5 w-3.5 shrink-0"
               aria-hidden="true"
             />
 
-            <span className="text-gray-800 font-medium truncate">
+            <span className="truncate font-medium text-text-dark">
               {place.place_name}
             </span>
           </nav>
@@ -403,13 +452,16 @@ export default function DestinationDetail() {
       {/* ==================================================
           MAIN CONTENT
       ================================================== */}
-      <main className="w-full max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-3 sm:py-5 lg:py-6">
+      <main className="mx-auto w-full max-w-7xl px-4 py-3 sm:px-6 sm:py-5 lg:px-8 lg:py-6">
         {/* BACK */}
         <Link
           to="/destinations"
-          className="inline-flex items-center gap-2 text-sm text-[#102040] hover:text-[#F22727] font-semibold mb-3 transition"
+          className="group mb-3 inline-flex items-center gap-2 text-sm font-semibold text-primary transition hover:text-primary-hover"
         >
-          <ArrowLeft size={17} />
+          <ArrowLeft
+            className="h-4 w-4 transition-transform duration-300 group-hover:-translate-x-0.5"
+            aria-hidden="true"
+          />
           Back to Destinations
         </Link>
 
@@ -417,23 +469,19 @@ export default function DestinationDetail() {
             DESTINATION HEADER
         ================================================== */}
         <section className="mb-6 sm:mb-8 lg:mb-10">
-          <div className="flex items-center gap-2 text-[#F22727] font-semibold text-sm sm:text-base mb-2 sm:mb-3">
-            <MapPin
-              size={18}
-              className="flex-shrink-0"
-              aria-hidden="true"
-            />
+          <div className="mb-2 flex items-center gap-2 text-sm font-semibold text-primary sm:mb-3 sm:text-base">
+            <MapPin className="h-[18px] w-[18px] shrink-0" aria-hidden="true" />
 
             <span className="truncate">{place.place_name}</span>
           </div>
 
-          <h1 className="text-3xl sm:text-4xl md:text-5xl lg:text-6xl font-bold text-[#102040] leading-tight break-words">
+          <h1 className="break-words font-display text-4xl font-semibold leading-tight tracking-tight text-text-display sm:text-5xl lg:text-6xl">
             Explore {place.place_name}
           </h1>
 
-          <p className="mt-3 sm:mt-4 text-sm sm:text-base lg:text-lg text-gray-600 max-w-3xl leading-7">
-            Discover the beauty, experiences and unforgettable
-            moments waiting for you in {place.place_name}.
+          <p className="mt-3 max-w-3xl text-sm leading-7 text-text-secondary sm:mt-4 sm:text-base lg:text-lg">
+            Discover the beauty, experiences and unforgettable moments waiting
+            for you in {place.place_name}.
           </p>
         </section>
 
@@ -442,27 +490,31 @@ export default function DestinationDetail() {
         ================================================== */}
         {destinationImage && (
           <section className="mb-8 sm:mb-10 lg:mb-14">
-            <div className="relative w-full aspect-[4/3] sm:aspect-[16/9] lg:aspect-[21/9] overflow-hidden rounded-2xl sm:rounded-3xl bg-gray-100 shadow-sm">
+            <div className="relative aspect-[4/3] w-full overflow-hidden rounded-2xl bg-surface-strong shadow-travel-card sm:aspect-[16/9] sm:rounded-3xl lg:aspect-[21/9]">
               <img
                 src={destinationImage}
                 alt={`${place.place_name} — popular travel destination`}
-                className="w-full h-full object-cover"
+                className="h-full w-full object-cover"
                 fetchPriority="high"
+                decoding="async"
                 width="1400"
                 height="600"
               />
 
-              <div className="absolute inset-0 bg-gradient-to-t from-black/55 via-black/5 to-transparent pointer-events-none" />
+              <div className="pointer-events-none absolute inset-0 bg-gradient-to-t from-ink-900/65 via-ink-900/5 to-transparent" />
 
               <div className="absolute bottom-0 left-0 right-0 p-5 sm:p-7 lg:p-10">
-                <div className="flex items-center gap-2 text-white/90 text-sm sm:text-base font-medium">
-                  <MapPin size={18} />
+                <div className="flex items-center gap-2 text-sm font-medium text-white/90 sm:text-base">
+                  <MapPin
+                    className="h-[18px] w-[18px] text-accent-bright"
+                    aria-hidden="true"
+                  />
                   <span>{place.place_name}</span>
                 </div>
 
-                <h2 className="text-white text-2xl sm:text-3xl lg:text-4xl font-bold mt-1">
+                <p className="mt-1 font-display text-2xl font-semibold text-white sm:text-3xl lg:text-4xl">
                   Your next adventure starts here
-                </h2>
+                </p>
               </div>
             </div>
           </section>
@@ -470,29 +522,22 @@ export default function DestinationDetail() {
 
         {/* ==================================================
             CONTENT + SIDEBAR
-
-            - items-start stops the grid stretching the
-              sidebar to the full column height (a stretched
-              sidebar can never stick)
-            - the sidebar uses self-start
-            - sticky only starts at lg; mobile/tablet stay in
-              normal vertical flow
-            - this grid holds ONLY the content column and the
-              sidebar. The review band is outside <main>.
+            items-start + self-start keep the sidebar able to stick.
+            Sticky starts at lg; below that it flows normally.
         ================================================== */}
-        <div className="grid grid-cols-1 lg:grid-cols-[minmax(0,1fr)_360px] gap-8 lg:gap-12 xl:gap-14 items-start">
+        <div className="grid grid-cols-1 items-start gap-8 pb-16 sm:pb-20 lg:grid-cols-[minmax(0,1fr)_360px] lg:gap-12 xl:gap-14">
           {/* ==================================================
               LEFT CONTENT
           ================================================== */}
-          <div className="min-w-0 space-y-8 sm:space-y-10 lg:space-y-12">
+          <div className="min-w-0 space-y-10 sm:space-y-12 lg:space-y-14">
             {/* ABOUT */}
             {place.description && (
               <section>
-                <h2 className="text-xl sm:text-2xl lg:text-3xl font-bold text-[#102040] mb-4 sm:mb-5">
+                <h2 className="mb-4 font-display text-3xl font-semibold text-text-dark sm:mb-5">
                   About {place.place_name}
                 </h2>
 
-                <div className="text-sm sm:text-base lg:text-lg text-gray-700 leading-7 sm:leading-8 whitespace-pre-line break-words">
+                <div className="whitespace-pre-line break-words text-sm leading-7 text-text sm:text-base sm:leading-8 lg:text-lg">
                   {place.description}
                 </div>
               </section>
@@ -501,69 +546,41 @@ export default function DestinationDetail() {
             {/* TRAVEL INFORMATION */}
             {(place.best_time_to_visit || hasStartingPrice) && (
               <section>
-                <h2 className="text-xl sm:text-2xl lg:text-3xl font-bold text-[#102040] mb-5 sm:mb-6">
+                <h2 className="mb-5 font-display text-3xl font-semibold text-text-dark sm:mb-6">
                   Travel Information
                 </h2>
 
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 sm:gap-5">
-                  {/* BEST TIME */}
+                <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 sm:gap-5">
                   {place.best_time_to_visit && (
-                    <div className="border border-gray-200 rounded-xl sm:rounded-2xl p-5 sm:p-6 bg-white shadow-sm">
-                      <div className="flex items-center gap-3 mb-3">
-                        <div className="w-10 h-10 sm:w-11 sm:h-11 rounded-xl bg-red-50 flex items-center justify-center flex-shrink-0">
-                          <CalendarDays
-                            size={20}
-                            className="text-[#F22727]"
-                          />
-                        </div>
-
-                        <div>
-                          <p className="text-xs sm:text-sm text-gray-500">
-                            Best Time
-                          </p>
-
-                          <h3 className="text-base sm:text-lg font-bold text-[#102040]">
-                            Best Time to Visit
-                          </h3>
-                        </div>
-                      </div>
-
-                      <p className="text-sm sm:text-base text-gray-700 leading-6">
+                    <InfoCard
+                      icon={
+                        <CalendarDays className="h-5 w-5" aria-hidden="true" />
+                      }
+                      label="Best Time"
+                      title="Best Time to Visit"
+                    >
+                      <p className="text-sm leading-6 text-text sm:text-base">
                         {place.best_time_to_visit}
                       </p>
-                    </div>
+                    </InfoCard>
                   )}
 
-                  {/* PRICE */}
                   {hasStartingPrice && (
-                    <div className="border border-gray-200 rounded-xl sm:rounded-2xl p-5 sm:p-6 bg-white shadow-sm">
-                      <div className="flex items-center gap-3 mb-3">
-                        <div className="w-10 h-10 sm:w-11 sm:h-11 rounded-xl bg-red-50 flex items-center justify-center flex-shrink-0">
-                          <IndianRupee
-                            size={20}
-                            className="text-[#F22727]"
-                          />
-                        </div>
-
-                        <div>
-                          <p className="text-xs sm:text-sm text-gray-500">
-                            Starting From
-                          </p>
-
-                          <h3 className="text-base sm:text-lg font-bold text-[#102040]">
-                            Holiday Packages
-                          </h3>
-                        </div>
-                      </div>
-
-                      <p className="text-2xl sm:text-3xl font-bold text-[#102040]">
+                    <InfoCard
+                      icon={
+                        <IndianRupee className="h-5 w-5" aria-hidden="true" />
+                      }
+                      label="Starting From"
+                      title="Holiday Packages"
+                    >
+                      <p className="font-display text-3xl font-semibold text-primary">
                         {formattedPrice}
                       </p>
 
-                      <p className="text-xs sm:text-sm text-gray-500 mt-1">
+                      <p className="mt-1 text-xs text-muted sm:text-sm">
                         Package price starts from
                       </p>
-                    </div>
+                    </InfoCard>
                   )}
                 </div>
               </section>
@@ -571,40 +588,42 @@ export default function DestinationDetail() {
 
             {/* HOLIDAY PACKAGES */}
             <section id="holiday-packages">
-              <div className="flex flex-col gap-2 sm:flex-row sm:items-end sm:justify-between mb-5 sm:mb-6">
+              <div className="mb-5 flex flex-col gap-2 sm:mb-6 sm:flex-row sm:items-end sm:justify-between">
                 <div>
-                  <div className="flex items-center gap-2 text-[#F22727] mb-2">
-                    <PackageCheck size={20} />
+                  <div className="mb-2 flex items-center gap-2 text-primary">
+                    <PackageCheck className="h-5 w-5" aria-hidden="true" />
 
                     <span className="text-sm font-semibold">
                       Holiday Packages
                     </span>
                   </div>
 
-                  <h2 className="text-xl sm:text-2xl lg:text-3xl font-bold text-[#102040]">
+                  <h2 className="font-display text-3xl font-semibold text-text-dark">
                     Holiday Packages in {place.place_name}
                   </h2>
 
-                  <p className="mt-2 text-sm sm:text-base text-gray-600 leading-6">
-                    Explore holiday packages available for{" "}
-                    {place.place_name} and choose the experience
-                    that suits your travel plans.
+                  <p className="mt-2 text-sm leading-6 text-text-secondary sm:text-base">
+                    Explore holiday packages available for {place.place_name}{" "}
+                    and choose the experience that suits your travel plans.
                   </p>
                 </div>
 
                 {destinationPackages.length > 0 && (
                   <Link
                     to="/packages"
-                    className="inline-flex items-center gap-1.5 text-sm font-semibold text-[#F22727] hover:text-[#D94141] transition whitespace-nowrap"
+                    className="group inline-flex items-center gap-1.5 whitespace-nowrap text-sm font-semibold text-link"
                   >
-                    View All Packages
-                    <ChevronRight size={17} />
+                    <span className="link-reveal">View All Packages</span>
+                    <ChevronRight
+                      className="arrow-shift h-4 w-4"
+                      aria-hidden="true"
+                    />
                   </Link>
                 )}
               </div>
 
               {destinationPackages.length > 0 ? (
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-5 sm:gap-6">
+                <RevealGroup className="grid grid-cols-1 gap-5 sm:grid-cols-2 sm:gap-6">
                   {destinationPackages.map((pkg) => {
                     const packageImage = getPackageImage(pkg);
 
@@ -615,71 +634,64 @@ export default function DestinationDetail() {
                     return (
                       <article
                         key={pkg.id ?? pkg.slug}
-                        className="group overflow-hidden rounded-2xl border border-gray-200 bg-white shadow-sm transition hover:-translate-y-0.5 hover:shadow-lg"
+                        className="card-lift h-full rounded-2xl"
                       >
                         <Link
-                          to={`/packages/${pkg.slug}`}
-                          className="block"
+                          to={`/packages/${encodeURIComponent(pkg.slug)}`}
+                          className="group flex h-full flex-col overflow-hidden rounded-2xl border border-divider bg-card shadow-travel-card hover:border-border focus:outline-none focus:ring-2 focus:ring-primary focus:ring-offset-2"
                         >
                           {/* PACKAGE IMAGE */}
-                          <div className="relative aspect-[16/10] overflow-hidden bg-gray-100">
+                          <div className="img-zoom relative aspect-[16/10] shrink-0 bg-surface-strong">
                             {packageImage ? (
                               <img
                                 src={packageImage}
                                 alt={pkg.title}
-                                className="w-full h-full object-cover transition duration-500 group-hover:scale-105"
+                                className="h-full w-full object-cover"
                                 loading="lazy"
+                                decoding="async"
                                 width="800"
                                 height="500"
                               />
                             ) : (
-                              <div className="w-full h-full flex items-center justify-center bg-gray-100">
+                              <div className="flex h-full w-full items-center justify-center bg-surface-soft">
                                 <PackageCheck
-                                  size={34}
-                                  className="text-gray-300"
+                                  className="h-9 w-9 text-placeholder"
+                                  aria-hidden="true"
                                 />
                               </div>
                             )}
 
                             {pkg.is_most_visited && (
-                              <span className="absolute top-3 left-3 inline-flex items-center rounded-full bg-white/95 px-3 py-1.5 text-xs font-bold text-[#102040] shadow-sm">
+                              <span className="absolute left-3 top-3 inline-flex items-center rounded-full bg-white/95 px-3 py-1.5 text-xs font-bold text-primary-dark shadow-travel-card">
                                 Most Visited
                               </span>
                             )}
                           </div>
 
                           {/* PACKAGE CONTENT */}
-                          <div className="p-5">
-                            <div className="flex items-start justify-between gap-3">
-                              <h3 className="text-lg sm:text-xl font-bold text-[#102040] leading-tight line-clamp-2">
-                                {pkg.title}
-                              </h3>
-
-                              <ChevronRight
-                                size={20}
-                                className="mt-0.5 flex-shrink-0 text-[#F22727] transition-transform group-hover:translate-x-1"
-                              />
-                            </div>
+                          <div className="flex flex-1 flex-col p-5">
+                            <h3 className="line-clamp-2 font-display text-xl font-semibold leading-tight text-text-dark transition-colors duration-300 group-hover:text-primary">
+                              {pkg.title}
+                            </h3>
 
                             {pkg.description && (
-                              <p className="mt-2 text-sm text-gray-600 leading-6 line-clamp-2">
+                              <p className="mt-2 line-clamp-2 text-sm leading-6 text-text-secondary">
                                 {pkg.description}
                               </p>
                             )}
 
-                            <div className="mt-4 flex flex-wrap items-center gap-x-4 gap-y-2 text-xs sm:text-sm text-gray-600">
+                            <div className="mt-4 flex flex-wrap items-center gap-x-4 gap-y-2 text-xs text-text-secondary sm:text-sm">
                               {pkg.duration_days && (
                                 <span className="inline-flex items-center gap-1.5">
                                   <Clock3
-                                    size={15}
-                                    className="text-[#F22727]"
+                                    className="h-4 w-4 text-accent"
+                                    aria-hidden="true"
                                   />
 
                                   {pkg.duration_days}{" "}
                                   {Number(pkg.duration_days) === 1
                                     ? "Day"
                                     : "Days"}
-
                                   {hasNights &&
                                     ` / ${pkg.duration_nights} ${
                                       Number(pkg.duration_nights) === 1
@@ -699,20 +711,23 @@ export default function DestinationDetail() {
                               )}
                             </div>
 
-                            <div className="mt-5 flex items-end justify-between gap-4 border-t border-gray-100 pt-4">
-                              <div>
-                                <p className="text-xs text-gray-500">
+                            <div className="mt-auto flex items-end justify-between gap-4 border-t border-divider pt-4">
+                              <div className="min-w-0">
+                                <p className="text-xs font-medium text-muted">
                                   Starting from
                                 </p>
 
-                                <p className="mt-0.5 text-xl font-bold text-[#102040]">
+                                <p className="mt-0.5 font-display text-2xl font-semibold leading-none text-primary">
                                   {formatPrice(pkg.price)}
                                 </p>
                               </div>
 
-                              <span className="inline-flex items-center gap-1.5 rounded-full bg-[#F22727] px-4 py-2 text-sm font-semibold text-white transition group-hover:bg-[#D94141]">
-                                View Package
-                                <ChevronRight size={16} />
+                              <span className="inline-flex shrink-0 items-center gap-1.5 text-sm font-semibold text-link">
+                                View package
+                                <ChevronRight
+                                  className="arrow-shift h-4 w-4"
+                                  aria-hidden="true"
+                                />
                               </span>
                             </div>
                           </div>
@@ -720,31 +735,33 @@ export default function DestinationDetail() {
                       </article>
                     );
                   })}
-                </div>
+                </RevealGroup>
               ) : (
-                <div className="rounded-2xl border border-gray-200 bg-gray-50 p-6 sm:p-8 text-center">
-                  <PackageCheck
-                    size={32}
-                    className="mx-auto text-gray-300"
-                  />
+                <div className="rounded-2xl border border-dashed border-divider bg-card p-6 text-center sm:p-8">
+                  <div className="mx-auto flex h-12 w-12 items-center justify-center rounded-full bg-surface-soft">
+                    <PackageCheck
+                      className="h-6 w-6 text-placeholder"
+                      aria-hidden="true"
+                    />
+                  </div>
 
-                  <h3 className="mt-3 text-lg font-bold text-[#102040]">
+                  <h3 className="mt-3 font-display text-xl font-semibold text-text-dark">
                     Packages coming soon
                   </h3>
 
-                  <p className="mt-2 text-sm text-gray-600 leading-6 max-w-md mx-auto">
+                  <p className="mx-auto mt-2 max-w-md text-sm leading-6 text-text-secondary">
                     We are currently preparing holiday packages for{" "}
-                    {place.place_name}. You can still contact our
-                    travel team to plan your trip.
+                    {place.place_name}. You can still contact our travel team to
+                    plan your trip.
                   </p>
 
                   <button
                     type="button"
                     onClick={() => setEnquiry(true)}
-                    className="mt-5 inline-flex items-center justify-center gap-2 rounded-full bg-[#F22727] px-5 py-2.5 text-sm font-semibold text-white hover:bg-[#D94141] transition"
+                    className="group mt-5 inline-flex min-h-[44px] items-center justify-center gap-2 rounded-full bg-accent px-6 py-3 text-sm font-semibold text-white shadow-brand transition-all duration-200 hover:-translate-y-0.5 hover:bg-accent-hover"
                   >
                     Plan My Trip
-                    <Send size={16} />
+                    <Send className="arrow-shift h-4 w-4" aria-hidden="true" />
                   </button>
                 </div>
               )}
@@ -752,24 +769,23 @@ export default function DestinationDetail() {
 
             {/* WHY VISIT */}
             <section>
-              <div className="rounded-2xl sm:rounded-3xl bg-gray-50 p-5 sm:p-7 lg:p-8">
-                <div className="flex items-center gap-2 mb-3">
-                  <MapPin size={20} className="text-[#F22727]" />
+              <div className="rounded-2xl bg-surface-soft p-5 sm:rounded-3xl sm:p-7 lg:p-8">
+                <div className="mb-3 flex items-center gap-2 text-primary">
+                  <MapPin className="h-5 w-5" aria-hidden="true" />
 
-                  <span className="text-sm font-semibold text-[#F22727]">
+                  <span className="text-sm font-semibold">
                     Travel Highlights
                   </span>
                 </div>
 
-                <h2 className="text-xl sm:text-2xl lg:text-3xl font-bold text-[#102040] mb-4">
+                <h2 className="mb-4 font-display text-3xl font-semibold text-text-dark">
                   Why Visit {place.place_name}?
                 </h2>
 
-                <p className="text-sm sm:text-base text-gray-700 leading-7">
-                  Experience the unique landscapes, local culture,
-                  memorable attractions and incredible experiences
-                  that make {place.place_name} a wonderful holiday
-                  destination.
+                <p className="text-sm leading-7 text-text sm:text-base">
+                  Experience the unique landscapes, local culture, memorable
+                  attractions and incredible experiences that make{" "}
+                  {place.place_name} a wonderful holiday destination.
                 </p>
               </div>
             </section>
@@ -777,53 +793,51 @@ export default function DestinationDetail() {
 
           {/* ==================================================
               RIGHT SIDEBAR
-              Sticky ONLY on desktop (lg+). Mobile/tablet =
-              normal vertical flow.
+              Sticky ONLY on desktop (lg+). Offset follows the fixed
+              header, same as PackageDetail.
           ================================================== */}
-          <aside className="w-full self-start lg:sticky lg:top-24">
-            <div className="border border-gray-200 rounded-2xl sm:rounded-3xl p-5 sm:p-6 lg:p-7 shadow-lg bg-white">
-              {/* DISCOVER CARD */}
-              <div className="relative overflow-hidden rounded-2xl bg-[#102040] p-5 sm:p-6 mb-5">
-                <div className="absolute -right-8 -top-8 w-24 h-24 rounded-full bg-[#F22727]/20" />
-
-                <div className="absolute -right-5 -bottom-10 w-28 h-28 rounded-full bg-white/5" />
-
+          <aside className="w-full self-start lg:sticky lg:top-[calc(var(--top-info-height,0px)+6rem)]">
+            <div className="rounded-2xl border border-divider bg-card p-5 shadow-travel-card sm:rounded-3xl sm:p-6 lg:p-7">
+              {/* DISCOVER CARD (light brand gradient, not a dark block) */}
+              <div className="relative mb-5 overflow-hidden rounded-2xl border border-primary/10 bg-brand-gradient p-5 sm:p-6">
                 <div className="relative">
-                  <div className="inline-flex items-center justify-center w-10 h-10 rounded-xl bg-white/10 mb-4">
-                    <MapPin size={20} className="text-[#F22727]" />
+                  <div className="mb-4 inline-flex h-10 w-10 items-center justify-center rounded-xl bg-white text-primary shadow-travel-card">
+                    <MapPin className="h-5 w-5" aria-hidden="true" />
                   </div>
 
-                  <p className="text-xs font-semibold uppercase tracking-wider text-white/60 mb-1">
+                  <p className="mb-1 text-xs font-semibold uppercase tracking-wider text-primary">
                     Discover
                   </p>
 
-                  <h2 className="text-xl sm:text-2xl font-bold text-white mb-2">
+                  <h2 className="mb-2 font-display text-2xl font-semibold text-text-dark">
                     Explore {place.place_name}
                   </h2>
 
-                  <p className="text-sm text-white/75 leading-6">
-                    Visit breathtaking places, experience local
-                    culture and create unforgettable memories.
+                  <p className="text-sm leading-6 text-text-secondary">
+                    Visit breathtaking places, experience local culture and
+                    create unforgettable memories.
                   </p>
                 </div>
               </div>
 
               {/* SUPPORT TEXT */}
-              <div className="p-3.5 sm:p-4 rounded-xl bg-gray-50">
-                <p className="text-xs sm:text-sm text-gray-600 leading-5 sm:leading-6">
+              <div className="rounded-xl bg-surface p-4">
+                <p className="text-xs leading-5 text-text-secondary sm:text-sm sm:leading-6">
                   Need help planning your trip to{" "}
-                  <strong>{place.place_name}</strong>? Our travel
-                  team can help create a personalized holiday for
+                  <strong className="text-text-dark">
+                    {place.place_name}
+                  </strong>
+                  ? Our travel team can help create a personalized holiday for
                   you.
                 </p>
 
                 <button
                   type="button"
                   onClick={() => setEnquiry(true)}
-                  className="mt-5 inline-flex items-center justify-center gap-2 rounded-full bg-[#F22727] px-5 py-2.5 text-sm font-semibold text-white hover:bg-[#D94141] transition"
+                  className="group mt-5 inline-flex min-h-[44px] w-full items-center justify-center gap-2 rounded-full bg-accent px-6 py-3 text-sm font-semibold text-white shadow-brand transition-all duration-200 hover:-translate-y-0.5 hover:bg-accent-hover focus:outline-none focus:ring-2 focus:ring-accent/40 focus:ring-offset-2"
                 >
-                  Enquiry Now
-                  <Send size={16} />
+                  Enquire Now
+                  <Send className="arrow-shift h-4 w-4" aria-hidden="true" />
                 </button>
               </div>
             </div>
@@ -833,34 +847,33 @@ export default function DestinationDetail() {
 
       {/* ==================================================
           REVIEW CTA
-          Separate full-width band BELOW <main> and above the
-          FAQ, same as PackageDetail. It is not part of the
-          content/sidebar grid.
+          Full-width band BELOW <main>, above the FAQ
+          (same as PackageDetail).
       ================================================== */}
-      <section className="border-y border-gray-100 bg-gray-50">
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-10 sm:py-12">
-          <div className="rounded-2xl sm:rounded-3xl bg-white border border-gray-200 p-6 sm:p-8 flex flex-col md:flex-row md:items-center md:justify-between gap-6">
+      <section className="border-y border-divider bg-surface-soft">
+        <div className="mx-auto max-w-7xl px-4 py-10 sm:px-6 sm:py-12 lg:px-8">
+          <div className="flex flex-col gap-6 rounded-2xl border border-divider bg-card p-6 shadow-travel-card sm:rounded-3xl sm:p-8 md:flex-row md:items-center md:justify-between">
             <div className="min-w-0">
-              <p className="text-xs sm:text-sm uppercase tracking-wide font-bold text-[#F22727]">
+              <p className="text-xs font-semibold uppercase tracking-wide text-primary sm:text-sm">
                 Traveller experiences
               </p>
 
-              <h2 className="mt-2 text-2xl sm:text-3xl font-bold text-[#102040]">
+              <h2 className="mt-2 font-display text-3xl font-semibold text-text-dark">
                 Your Valuable Review
               </h2>
 
-              <p className="mt-2 text-sm sm:text-base text-gray-600 max-w-2xl">
-                Share your experience with OnaTrip Holidays and help
-                future travellers plan their journey.
+              <p className="mt-2 max-w-2xl text-sm text-text sm:text-base">
+                Share your experience with {BRAND_NAME} and help future
+                travellers plan their journey.
               </p>
             </div>
 
             <button
               type="button"
               onClick={() => setShowReview(true)}
-              className="inline-flex items-center justify-center gap-2 rounded-xl bg-[#F22727] hover:bg-[#D94141] text-white font-bold px-5 py-3.5 transition shrink-0"
+              className={`${PRIMARY_BUTTON} min-h-[44px] shrink-0 px-5 py-3.5`}
             >
-              <MessageSquareHeart className="w-4 h-4" />
+              <MessageSquareHeart className="h-4 w-4" aria-hidden="true" />
               Your Valuable Review
             </button>
           </div>
@@ -903,7 +916,6 @@ export default function DestinationDetail() {
     </div>
   );
 }
-
 
 
 

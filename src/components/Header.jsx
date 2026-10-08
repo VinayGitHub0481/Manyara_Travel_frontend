@@ -1,20 +1,37 @@
 
-
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { Link, useLocation, useNavigate } from "react-router-dom";
 import { Menu, X } from "lucide-react";
 
 const NAV_LINKS = [
   { label: "Home", href: "/" },
-  { label: "Packages", href: "/packages" },
   { label: "Most Visited", href: "/destinations" },
-  { label: "Batches", href: "/batches" },
+  { label: "Seasonal Views", href: "/seasoned-destinations" },
+   { label: "Packages", href: "/packages" },
   { label: "Happy Moments", href: "/happy-moments" },
   { label: "Reviews", href: "/reviews" },
   { label: "Blogs", href: "/blog" },
   { label: "About Us", href: "/about" },
   { label: "Contact Us", href: "/contact" },
 ];
+
+const HEADER_HEIGHT = {
+  mobile: 58,
+  tablet: 62,
+  desktop: 66,
+};
+
+function getHeaderHeight() {
+  if (window.innerWidth >= 1024) {
+    return HEADER_HEIGHT.desktop;
+  }
+
+  if (window.innerWidth >= 640) {
+    return HEADER_HEIGHT.tablet;
+  }
+
+  return HEADER_HEIGHT.mobile;
+}
 
 export default function Header({ onPlanTrip }) {
   const [open, setOpen] = useState(false);
@@ -23,11 +40,46 @@ export default function Header({ onPlanTrip }) {
   const navigate = useNavigate();
 
   // ============================================================
+  // HEADER REF
+  // Used only for detecting clicks/touches outside the header
+  // ============================================================
+  const headerRef = useRef(null);
+
+  const closeMenu = () => {
+    setOpen(false);
+  };
+
+  // ============================================================
+  // CLOSE MENU WHEN USER CLICKS / TOUCHES OUTSIDE HEADER
+  // ============================================================
+  useEffect(() => {
+    if (!open) {
+      return;
+    }
+
+    const handleOutsideClick = (event) => {
+      if (
+        headerRef.current &&
+        !headerRef.current.contains(event.target)
+      ) {
+        setOpen(false);
+      }
+    };
+
+    document.addEventListener("mousedown", handleOutsideClick);
+    document.addEventListener("touchstart", handleOutsideClick);
+
+    return () => {
+      document.removeEventListener("mousedown", handleOutsideClick);
+      document.removeEventListener("touchstart", handleOutsideClick);
+    };
+  }, [open]);
+
+  // ============================================================
   // HOME
   // ============================================================
-
   const handleHome = () => {
-    setOpen(false);
+    closeMenu();
 
     if (location.pathname === "/") {
       window.scrollTo({
@@ -36,120 +88,107 @@ export default function Header({ onPlanTrip }) {
       });
 
       window.history.replaceState(null, "", "/");
-    } else {
-      navigate("/");
+      return;
     }
+
+    navigate("/");
   };
 
   // ============================================================
   // SECTION NAVIGATION
   // ============================================================
-
   const handleSectionNavigation = (sectionId) => {
-    setOpen(false);
+    closeMenu();
 
-    if (location.pathname === "/") {
-      const element = document.getElementById(sectionId);
-
-      if (element) {
-        /*
-         * Header height is now responsive.
-         *
-         * Instead of using hard-coded 100/110 values,
-         * calculate the actual fixed header position + height.
-         */
-        const rootStyles = getComputedStyle(document.documentElement);
-
-        const topInfoHeight =
-          parseInt(
-            rootStyles.getPropertyValue("--top-info-height"),
-            10
-          ) || 0;
-
-        let headerHeight = 58;
-
-        if (window.innerWidth >= 1024) {
-          headerHeight = 66;
-        } else if (window.innerWidth >= 640) {
-          headerHeight = 62;
-        }
-
-        const headerOffset =
-          topInfoHeight + headerHeight + 12;
-
-        const elementPosition =
-          element.getBoundingClientRect().top +
-          window.scrollY;
-
-        window.scrollTo({
-          top: Math.max(
-            0,
-            elementPosition - headerOffset
-          ),
-          behavior: "smooth",
-        });
-
-        window.history.replaceState(
-          null,
-          "",
-          `/#${sectionId}`
-        );
-      }
-
+    if (location.pathname !== "/") {
+      navigate(`/#${sectionId}`);
       return;
     }
 
-    navigate(`/#${sectionId}`);
+    const element = document.getElementById(sectionId);
+
+    if (!element) {
+      return;
+    }
+
+    const rootStyles = getComputedStyle(
+      document.documentElement
+    );
+
+    const topInfoHeight =
+      parseInt(
+        rootStyles.getPropertyValue("--top-info-height"),
+        10
+      ) || 0;
+
+    const headerHeight = getHeaderHeight();
+
+    const offset =
+      topInfoHeight + headerHeight + 12;
+
+    const elementPosition =
+      element.getBoundingClientRect().top +
+      window.scrollY;
+
+    window.scrollTo({
+      top: Math.max(
+        0,
+        elementPosition - offset
+      ),
+      behavior: "smooth",
+    });
+
+    window.history.replaceState(
+      null,
+      "",
+      `/#${sectionId}`
+    );
   };
 
   // ============================================================
   // PLAN A TRIP
   // ============================================================
-
   const handlePlanTrip = () => {
-    setOpen(false);
+    closeMenu();
     onPlanTrip?.();
   };
 
   // ============================================================
-  // NAV LINK RENDERER
+  // NAVIGATION LINK
   // ============================================================
-
   const renderNavLink = (link, mobile = false) => {
-    const commonClass = mobile
+    const className = mobile
       ? `
-          block
-          w-full
-          border-b
-          border-navy/5
-          py-2.5
-          text-left
-          text-sm
-          font-medium
-          text-navy/80
-          transition-colors
-          hover:text-navy
+          block w-full
+          border-b border-border
+          py-3
+          text-left text-sm font-medium
+          text-text
+          transition-colors duration-200
+          hover:bg-surface-soft
+          hover:text-rose-700
         `
       : `
           whitespace-nowrap
-          text-[13px]
-          font-medium
-          text-navy/70
-          transition-colors
-          hover:text-navy
+          rounded-full
+          px-2 py-1
+          text-[13px] font-medium
+          text-text
+          transition-colors duration-200
+          hover:bg-surface-soft
+          hover:text-rose-700
         `;
 
     // ----------------------------------------------------------
     // HOME
     // ----------------------------------------------------------
-
     if (link.href === "/") {
       return (
         <button
           key={link.label}
           type="button"
           onClick={handleHome}
-          className={commonClass}
+          className={className}
         >
           {link.label}
         </button>
@@ -159,7 +198,6 @@ export default function Header({ onPlanTrip }) {
     // ----------------------------------------------------------
     // SECTION
     // ----------------------------------------------------------
-
     if (link.section) {
       return (
         <button
@@ -168,7 +206,7 @@ export default function Header({ onPlanTrip }) {
           onClick={() =>
             handleSectionNavigation(link.section)
           }
-          className={commonClass}
+          className={className}
         >
           {link.label}
         </button>
@@ -178,116 +216,107 @@ export default function Header({ onPlanTrip }) {
     // ----------------------------------------------------------
     // NORMAL ROUTE
     // ----------------------------------------------------------
-
     return (
       <Link
         key={link.href}
         to={link.href}
-        onClick={() => setOpen(false)}
-        className={commonClass}
+        onClick={closeMenu}
+        className={className}
       >
         {link.label}
       </Link>
     );
   };
 
-  // ============================================================
-  // HEADER
-  // ============================================================
+return (
+  <>
+    {/* ============================================================
+        MOBILE OUTSIDE-CLICK BACKDROP
+        Closes the menu when the user taps anywhere outside it.
+        ============================================================ */}
+    {open && (
+      <button
+        type="button"
+        aria-label="Close navigation menu"
+        onClick={closeMenu}
+        className="
+          fixed inset-0
+          z-40
+          bg-transparent
+          lg:hidden
+          cursor-default
+        "
+      />
+    )}
 
-  return (
     <header
+      ref={headerRef}
       className="
-        fixed
-        inset-x-0
-        z-50
-        w-full
-        border-b
-        border-navy/10
-        bg-ivory
-        transition-[top]
-        duration-200
+        fixed inset-x-0 z-50 w-full
+        border-b border-border
+        bg-ivory/95
+        backdrop-blur-md
+        shadow-navbar
       "
       style={{
-        /*
-         * IMPORTANT
-         *
-         * TopInfoBar controls --top-info-height.
-         *
-         * Enabled:
-         *   mobile  = 52px
-         *   tablet  = 58px
-         *   desktop = 62px
-         *
-         * Disabled:
-         *   = 0px
-         *
-         * Therefore the Header automatically moves to
-         * the very top when the TopInfoBar is disabled.
-         */
         top: "var(--top-info-height, 0px)",
       }}
     >
-      {/* ======================================================
+      {/* ========================================================
           MAIN HEADER
-          ======================================================= */}
-
+          ======================================================== */}
       <div
         className="
           mx-auto
-          flex
-          w-full
-          max-w-7xl
-          min-w-0
-          items-center
-          justify-between
+          flex w-full max-w-7xl
+          items-center justify-between
           gap-3
-          px-3
-          sm:px-5
-          md:px-6
-          lg:px-8
-          h-[58px]
-          sm:h-[62px]
-          lg:h-[66px]
+          px-3 sm:px-5 md:px-6 lg:px-8
+          h-[58px] sm:h-[62px] lg:h-[66px]
         "
       >
-        {/* ====================================================
-            LOGO
-            ==================================================== */}
-
+        {/* ======================================================
+            MANYARA PRIVE VACATIONS LOGO
+            ====================================================== */}
         <button
           type="button"
           onClick={handleHome}
           className="
-            flex
-            min-w-0
-            shrink-0
+            flex min-w-0 shrink-0
             items-center
+            rounded-md
+            focus:outline-none
+            focus-visible:ring-2
+            focus-visible:ring-rose-500
+            focus-visible:ring-offset-2
           "
-          aria-label="On a Trip Holidays Home"
+          aria-label="Manyara Prive Vacations Home"
         >
           <img
-            src="/images/logo_1.webp"
-            alt="On a Trip Holidays"
+            src="/images/Manyara_2.webp"
+            alt="Manyara Prive Vacations"
             className="
               block
-              h-8
-              w-auto
-              max-w-[125px]
+              h-8 w-auto
+              max-w-[140px]
               shrink-0
               object-contain
-              sm:h-9
-              sm:max-w-[145px]
+              transition-all
+              duration-300
+              ease-out
+              hover:drop-shadow-[0_0_5px_rgba(244,114,182,0.45)]
+              sm:h-14
+              sm:max-w-[170px]
+              sm:-ml-2
               lg:h-10
               lg:max-w-[165px]
             "
           />
         </button>
 
-        {/* ====================================================
+        {/* ======================================================
             DESKTOP NAVIGATION
-            ==================================================== */}
-
+            ====================================================== */}
         <nav
           className="
             hidden
@@ -295,22 +324,19 @@ export default function Header({ onPlanTrip }) {
             flex-1
             items-center
             justify-center
-            gap-3
+            gap-1
             lg:flex
-            xl:gap-5
-            2xl:gap-6
+            xl:gap-2
+            2xl:gap-3
           "
           aria-label="Main navigation"
         >
-          {NAV_LINKS.map((link) =>
-            renderNavLink(link)
-          )}
+          {NAV_LINKS.map((link) => renderNavLink(link))}
         </nav>
 
-        {/* ====================================================
+        {/* ======================================================
             DESKTOP PLAN A TRIP
-            ==================================================== */}
-
+            ====================================================== */}
         <div className="hidden shrink-0 lg:block">
           <button
             type="button"
@@ -318,24 +344,28 @@ export default function Header({ onPlanTrip }) {
             className="
               whitespace-nowrap
               rounded-full
-              bg-navy
-              px-4
-              py-2
+              bg-rose-600
+              px-4 py-2
               text-[13px]
               font-semibold
-              text-ivory
-              transition-colors
-              hover:bg-navy-light
+              text-white
+              shadow-brand
+              transition-all duration-200
+              hover:bg-rose-700
+              hover:shadow-travel-hover
+              focus:outline-none
+              focus-visible:ring-2
+              focus-visible:ring-rose-500
+              focus-visible:ring-offset-2
             "
           >
             Plan a Trip
           </button>
         </div>
 
-        {/* ====================================================
+        {/* ======================================================
             TABLET / MOBILE ACTIONS
-            ==================================================== */}
-
+            ====================================================== */}
         <div
           className="
             flex
@@ -345,8 +375,6 @@ export default function Header({ onPlanTrip }) {
             lg:hidden
           "
         >
-          {/* PLAN A TRIP */}
-
           <button
             type="button"
             onClick={handlePlanTrip}
@@ -354,14 +382,18 @@ export default function Header({ onPlanTrip }) {
               shrink-0
               whitespace-nowrap
               rounded-full
-              bg-navy
-              px-3
-              py-1.5
+              bg-rose-600
+              px-3 py-1.5
               text-[11px]
               font-semibold
-              text-ivory
-              transition-colors
-              hover:bg-navy-light
+              text-white
+              shadow-brand
+              transition-colors duration-200
+              hover:bg-rose-700
+              focus:outline-none
+              focus-visible:ring-2
+              focus-visible:ring-rose-500
+              focus-visible:ring-offset-2
               sm:px-3.5
               sm:py-2
               sm:text-xs
@@ -370,31 +402,33 @@ export default function Header({ onPlanTrip }) {
             Plan a Trip
           </button>
 
-          {/* MENU */}
-
+          {/* ====================================================
+              BURGER / CLOSE BUTTON
+              ==================================================== */}
           <button
             type="button"
+            onClick={() => setOpen((previous) => !previous)}
             className="
+              relative
+              z-[60]
               flex
-              h-9
-              w-9
+              h-9 w-9
               shrink-0
               items-center
               justify-center
               rounded-lg
-              text-navy
-              transition-colors
-              hover:bg-navy/5
+              text-ink-800
+              transition-colors duration-200
+              hover:bg-surface-soft
+              hover:text-rose-700
+              focus:outline-none
+              focus-visible:ring-2
+              focus-visible:ring-rose-500
+              focus-visible:ring-offset-2
             "
-            onClick={() =>
-              setOpen((previous) => !previous)
-            }
-            aria-label={
-              open
-                ? "Close menu"
-                : "Open menu"
-            }
+            aria-label={open ? "Close menu" : "Open menu"}
             aria-expanded={open}
+            aria-controls="mobile-navigation"
           >
             {open ? (
               <X className="h-5 w-5" />
@@ -405,36 +439,69 @@ export default function Header({ onPlanTrip }) {
         </div>
       </div>
 
-      {/* ======================================================
+      {/* ========================================================
           MOBILE / TABLET NAVIGATION
-          ======================================================= */}
-
+          ======================================================== */}
       {open && (
         <nav
+          id="mobile-navigation"
           className="
-            w-full
+            relative
+            z-[55]
             max-h-[calc(100vh-120px)]
             overflow-y-auto
-            border-t
-            border-navy/10
-            bg-ivory
+            border-t border-border
+            bg-card
             px-4
             pb-3
             pt-1
+            shadow-navbar
             sm:px-6
             lg:hidden
           "
           aria-label="Mobile navigation"
+          onClick={(event) => {
+            /*
+             * If the user taps an actual navigation item,
+             * that item's own onClick will close the menu.
+             *
+             * This prevents accidental closing when interacting
+             * with the navigation container itself.
+             */
+            event.stopPropagation();
+          }}
         >
-          {NAV_LINKS.map((link) =>
-            renderNavLink(link, true)
-          )}
+          {NAV_LINKS.map((link) => renderNavLink(link, true))}
+
+          <button
+            type="button"
+            onClick={handlePlanTrip}
+            className="
+              mt-3
+              w-full
+              rounded-full
+              bg-rose-600
+              px-4 py-2.5
+              text-sm
+              font-semibold
+              text-white
+              shadow-brand
+              transition-colors duration-200
+              hover:bg-rose-700
+              focus:outline-none
+              focus-visible:ring-2
+              focus-visible:ring-rose-500
+              focus-visible:ring-offset-2
+            "
+          >
+            Plan a Trip
+          </button>
         </nav>
       )}
     </header>
-  );
+  </>
+);
+
 }
-
-
 
 

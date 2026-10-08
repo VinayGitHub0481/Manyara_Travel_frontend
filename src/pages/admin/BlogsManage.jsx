@@ -1,5 +1,4 @@
 
-
 import { useEffect, useState } from "react";
 import {
   Plus,
@@ -8,6 +7,7 @@ import {
   X,
   ChevronUp,
   ChevronDown,
+  Play,
 } from "lucide-react";
 
 import {
@@ -16,6 +16,9 @@ import {
   updateBlog,
   deleteBlog,
 } from "../../api/content";
+
+import { ToastContainer, toast } from "react-toastify";
+import "react-toastify/dist/ReactToastify.css";
 
 import ImageUploadField from "../../components/admin/ImageUploadField";
 import BlogMediaUploader from "../../components/admin/BlogMediaUploader";
@@ -39,6 +42,58 @@ const EMPTY_FORM = {
   status: "draft",
 };
 
+// --------------------------------------------------
+// YOUTUBE HELPERS
+//
+// Videos are NOT uploaded anywhere. Only the YouTube link is
+// saved (inside the blog content, as a {{video:...}} token).
+// --------------------------------------------------
+
+/**
+ * Returns the 11-character video id from any common YouTube link
+ * (watch, youtu.be, embed, shorts, live, mobile), or "" if invalid.
+ */
+const getYouTubeId = (input) => {
+  const value = String(input || "").trim();
+  if (!value) return "";
+
+  try {
+    const url = new URL(
+      /^https?:\/\//i.test(value) ? value : `https://${value}`
+    );
+
+    const host = url.hostname.replace(/^www\.|^m\./, "");
+    let id = "";
+
+    if (host === "youtu.be") {
+      id = url.pathname.split("/")[1] || "";
+    } else if (
+      host === "youtube.com" ||
+      host === "youtube-nocookie.com" ||
+      host === "music.youtube.com"
+    ) {
+      if (url.pathname === "/watch") {
+        id = url.searchParams.get("v") || "";
+      } else {
+        const match = url.pathname.match(
+          /^\/(?:embed|shorts|live|v)\/([^/?]+)/
+        );
+        id = match ? match[1] : "";
+      }
+    }
+
+    return /^[\w-]{11}$/.test(id) ? id : "";
+  } catch {
+    return "";
+  }
+};
+
+// Short form: no "?" or "=" characters, so it is safe inside a media token.
+const toYouTubeUrl = (id) => `https://youtu.be/${id}`;
+
+const getYouTubeThumbnail = (id) =>
+  `https://i.ytimg.com/vi/${id}/hqdefault.jpg`;
+
 export default function BlogsManage() {
   const [blogs, setBlogs] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -51,7 +106,11 @@ export default function BlogsManage() {
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
 
-  // Upload states
+  // YouTube link input
+  const [videoLink, setVideoLink] = useState("");
+  const [videoError, setVideoError] = useState("");
+
+  // Upload states (cover image + blog photos only; videos are links)
   const [coverUploading, setCoverUploading] = useState(false);
   const [mediaBusy, setMediaBusy] = useState(false);
 
@@ -72,10 +131,13 @@ export default function BlogsManage() {
     } catch (err) {
       console.error("Failed to load blogs:", err);
 
-      setError(
+      const message=
         err?.response?.data?.detail ||
-          "Failed to load blogs. Please try again."
-      );
+          "Failed to load blogs. Please try again.";
+      
+      setError(message);
+      toast.error(message);
+
     } finally {
       setLoading(false);
     }
@@ -121,6 +183,8 @@ export default function BlogsManage() {
   const resetUploadState = () => {
     setCoverUploading(false);
     setMediaBusy(false);
+    setVideoLink("");
+    setVideoError("");
   };
 
   const openCreateForm = () => {
@@ -191,6 +255,36 @@ export default function BlogsManage() {
     }));
   };
 
+  const addVideoLink = () => {
+    const id = getYouTubeId(videoLink);
+
+   if (!id) {
+     setVideoError(
+        "Enter a valid YouTube link, for example https://www.youtube.com/watch?v=..."
+      );
+      toast.warning("Please enter a valid YouTube link.");
+      return;
+    }
+
+    const url = toYouTubeUrl(id);
+
+    const alreadyAdded = form.media.some(
+      (item) =>
+        item.type === "video" && getYouTubeId(item.url) === id
+    );
+
+   if (alreadyAdded) {
+      setVideoError("This video is already added to the blog.");
+      toast.warning("This video is already added to the blog.");
+      return;
+    }
+
+    addMedia([{ type: "video", url, caption: "" }]);
+
+    setVideoLink("");
+    setVideoError("");
+  };
+
   const changeMediaCaption = (index, caption) => {
     setForm((prev) => ({
       ...prev,
@@ -216,19 +310,13 @@ export default function BlogsManage() {
     setForm((prev) => {
       const target = index + direction;
 
-      if (
-        target < 0 ||
-        target >= prev.media.length
-      ) {
+      if (target < 0 || target >= prev.media.length) {
         return prev;
       }
 
       const next = [...prev.media];
 
-      [next[index], next[target]] = [
-        next[target],
-        next[index],
-      ];
+      [next[index], next[target]] = [next[target], next[index]];
 
       return {
         ...prev,
@@ -245,17 +333,24 @@ export default function BlogsManage() {
     e.preventDefault();
 
     if (uploading) {
-      setError("Please wait for your uploads to finish.");
+      toast.warning("Please wait for your uploads to finish.");
+      return;
+    }
+
+    if (videoLink.trim()) {
+      toast.warning(
+        "You typed a YouTube link but did not add it. Click Add video, or clear the field."
+      );
       return;
     }
 
     if (!form.title.trim()) {
-      setError("Blog title is required.");
+      toast.warning("Blog title is required.");
       return;
     }
 
     if (!form.content.trim()) {
-      setError("Blog content is required.");
+      toast.warning("Blog content is required.");
       return;
     }
 
@@ -271,26 +366,21 @@ export default function BlogsManage() {
        *
        * {{image:https://.../dubai1.jpg}}
        * {{image:https://.../dubai2.jpg}}
-       * {{video:https://.../dubai.mp4}}
+       * {{video:https://youtu.be/XXXXXXXXXXX}}
+       *
+       * Videos are plain YouTube links, so nothing is
+       * uploaded to Cloudinary for them.
        */
 
       const mediaLines = form.media
         .map((item) =>
-          makeMediaToken(
-            item.type,
-            item.url,
-            item.caption
-          )
+          makeMediaToken(item.type, item.url, item.caption)
         )
         .join("\n");
 
       /*
-       * IMPORTANT:
-       *
-       * Media is stored BEFORE the text.
-       *
-       * This allows BlogDetail.jsx later to render
-       * the gallery/video section before the article text.
+       * Media is stored BEFORE the text so BlogDetail.jsx
+       * can render the gallery/video section first.
        */
 
       const combinedContent = mediaLines
@@ -300,45 +390,46 @@ export default function BlogsManage() {
       const payload = {
         title: form.title.trim(),
 
-        excerpt:
-          form.excerpt.trim() || null,
+        excerpt: form.excerpt.trim() || null,
 
         content: combinedContent,
 
         cover_image: form.cover_image?.url
           ? {
               url: form.cover_image.url,
-              public_id:
-                form.cover_image.public_id || null,
+              public_id: form.cover_image.public_id || null,
             }
           : null,
 
-        target_keyword:
-          form.target_keyword.trim() || null,
+        target_keyword: form.target_keyword.trim() || null,
 
-        meta_description:
-          form.meta_description.trim() || null,
+        meta_description: form.meta_description.trim() || null,
 
         status: form.status,
       };
 
       if (editingId) {
         await updateBlog(editingId, payload);
+        toast.success("Blog updated successfully.");
       } else {
         await createBlog(payload);
+        toast.success("Blog created successfully.");
       }
 
       await loadBlogs();
-
       closeForm();
-    } catch (err) {
-      console.error("Failed to save blog:", err);
 
-      setError(
-        err?.response?.data?.detail ||
-          "Failed to save blog. Please try again."
-      );
-    } finally {
+      } catch (err) {
+        console.error("Failed to save blog:", err);
+
+        const message =
+          err?.response?.data?.detail ||
+          "Failed to save blog. Please try again.";
+
+        setError(message);
+        toast.error(message);
+      } finally {
+
       setSaving(false);
     }
   };
@@ -354,36 +445,48 @@ export default function BlogsManage() {
 
     if (!confirmed) return;
 
-    try {
-      setError("");
+   try {
+        setError("");
+        await deleteBlog(blog.id);
 
-      await deleteBlog(blog.id);
+        setBlogs((prev) =>
+          prev.filter((item) => item.id !== blog.id)
+        );
 
-      setBlogs((prev) =>
-        prev.filter((item) => item.id !== blog.id)
-      );
-    } catch (err) {
-      console.error("Failed to delete blog:", err);
+        toast.success("Blog deleted successfully.");
+      } catch (err) {
+        console.error("Failed to delete blog:", err);
 
-      setError(
-        err?.response?.data?.detail ||
-          "Failed to delete blog. Please try again."
-      );
-    }
-  };
+        const message =
+          err?.response?.data?.detail ||
+          "Failed to delete blog. Please try again.";
+
+        setError(message);
+        toast.error(message);
+      }
+        };
 
   // --------------------------------------------------
   // UI
   // --------------------------------------------------
 
   return (
+     <>
+    <ToastContainer
+      position="top-right"
+      autoClose={3500}
+      hideProgressBar={false}
+      newestOnTop
+      closeOnClick
+      pauseOnHover
+      draggable
+      theme="light"
+    />
     <div className="min-h-screen bg-ivory p-6">
       {/* HEADER */}
       <div className="flex items-center justify-between mb-6">
         <div>
-          <h1 className="text-2xl font-bold text-navy">
-            Blogs
-          </h1>
+          <h1 className="text-2xl font-bold text-navy">Blogs</h1>
 
           <p className="text-sm text-navy/60 mt-1">
             Create and manage travel blogs.
@@ -415,9 +518,7 @@ export default function BlogsManage() {
           </div>
         ) : blogs.length === 0 ? (
           <div className="p-10 text-center">
-            <p className="text-navy/60">
-              No blogs found.
-            </p>
+            <p className="text-navy/60">No blogs found.</p>
 
             <button
               type="button"
@@ -475,14 +576,10 @@ export default function BlogsManage() {
                   )}
 
                   <div className="flex flex-wrap gap-4 mt-2 text-xs text-navy/40">
-                    <span>
-                      Slug: {blog.slug}
-                    </span>
+                    <span>Slug: {blog.slug}</span>
 
                     {blog.target_keyword && (
-                      <span>
-                        Keyword: {blog.target_keyword}
-                      </span>
+                      <span>Keyword: {blog.target_keyword}</span>
                     )}
                   </div>
                 </div>
@@ -521,9 +618,7 @@ export default function BlogsManage() {
             <div className="sticky top-0 z-10 bg-white border-b border-navy/10 px-6 py-4 flex items-center justify-between">
               <div>
                 <h2 className="text-xl font-bold text-navy">
-                  {editingId
-                    ? "Edit Blog"
-                    : "Create Blog"}
+                  {editingId ? "Edit Blog" : "Create Blog"}
                 </h2>
 
                 <p className="text-xs text-navy/50 mt-1">
@@ -542,10 +637,7 @@ export default function BlogsManage() {
             </div>
 
             {/* FORM */}
-            <form
-              onSubmit={handleSubmit}
-              className="p-6 space-y-5"
-            >
+            <form onSubmit={handleSubmit} className="p-6 space-y-5">
               {/* TITLE */}
               <div>
                 <label className="block text-sm font-semibold text-navy mb-1.5">
@@ -603,27 +695,79 @@ export default function BlogsManage() {
                     </p>
 
                     <p className="text-xs text-navy/50 mt-1">
-                      Upload multiple photos or videos for this
-                      blog. They will appear before the article
-                      text on the blog page.
+                      Upload photos, and add videos as YouTube
+                      links. They appear before the article text
+                      on the blog page.
                     </p>
                   </div>
 
                   {form.media.length > 0 && (
                     <span className="shrink-0 rounded-full bg-navy/5 px-2.5 py-1 text-xs font-semibold text-navy/60">
                       {form.media.length}{" "}
-                      {form.media.length === 1
-                        ? "file"
-                        : "files"}
+                      {form.media.length === 1 ? "file" : "files"}
                     </span>
                   )}
                 </div>
 
+                {/* PHOTOS (uploaded) */}
                 <BlogMediaUploader
                   onInsert={addMedia}
                   onBusyChange={setMediaBusy}
                   disabled={saving}
                 />
+
+                {/* VIDEOS (YouTube links, nothing is uploaded) */}
+                <div className="mt-4 rounded-lg border border-navy/10 bg-white p-3">
+                  <label
+                    htmlFor="blog-youtube-link"
+                    className="block text-xs font-semibold text-navy mb-1.5"
+                  >
+                    Add a YouTube video
+                  </label>
+
+                  <div className="flex gap-2">
+                    <input
+                      id="blog-youtube-link"
+                      type="url"
+                      inputMode="url"
+                      value={videoLink}
+                      onChange={(e) => {
+                        setVideoLink(e.target.value);
+                        if (videoError) setVideoError("");
+                      }}
+                      onKeyDown={(e) => {
+                        if (e.key === "Enter") {
+                          e.preventDefault();
+                          addVideoLink();
+                        }
+                      }}
+                      placeholder="https://www.youtube.com/watch?v=..."
+                      disabled={saving}
+                      className="min-w-0 flex-1 border border-navy/15 rounded-lg px-3 py-2 text-sm outline-none focus:border-secondary"
+                    />
+
+                    <button
+                      type="button"
+                      onClick={addVideoLink}
+                      disabled={saving || !videoLink.trim()}
+                      className="shrink-0 inline-flex items-center gap-1.5 rounded-lg bg-secondary px-4 py-2 text-sm font-semibold text-white transition hover:bg-secondary/90 disabled:cursor-not-allowed disabled:opacity-50"
+                    >
+                      <Plus size={15} />
+                      Add video
+                    </button>
+                  </div>
+
+                  {videoError ? (
+                    <p className="mt-1.5 text-xs text-red-600">
+                      {videoError}
+                    </p>
+                  ) : (
+                    <p className="mt-1.5 text-xs text-navy/50">
+                      Paste any YouTube link (watch, youtu.be or
+                      Shorts). Only the link is saved.
+                    </p>
+                  )}
+                </div>
 
                 {/* MEDIA PREVIEW */}
                 {form.media.length > 0 && (
@@ -633,94 +777,113 @@ export default function BlogsManage() {
                     </p>
 
                     <ul className="grid grid-cols-1 gap-3 sm:grid-cols-2">
-                      {form.media.map((media, index) => (
-                        <li
-                          key={`${media.url}-${index}`}
-                          className="overflow-hidden rounded-lg border border-navy/10 bg-white"
-                        >
-                          <div className="relative aspect-video w-full bg-navy/5">
-                            {media.type === "video" ? (
-                              <video
-                                src={getVideoSrc(media.url)}
-                                poster={getVideoPoster(media.url)}
-                                preload="metadata"
-                                muted
-                                playsInline
-                                className="h-full w-full object-cover"
-                              />
-                            ) : (
-                              <img
-                                src={media.url}
-                                alt=""
-                                loading="lazy"
-                                className="h-full w-full object-cover"
-                              />
-                            )}
+                      {form.media.map((media, index) => {
+                        const youTubeId =
+                          media.type === "video"
+                            ? getYouTubeId(media.url)
+                            : "";
 
-                            {/* TYPE BADGE */}
-                            <span className="absolute left-2 top-2 rounded-full bg-navy-dark/70 px-2 py-0.5 text-[10px] font-semibold uppercase text-ivory">
-                              {media.type}
-                            </span>
+                        return (
+                          <li
+                            key={`${media.url}-${index}`}
+                            className="overflow-hidden rounded-lg border border-navy/10 bg-white"
+                          >
+                            <div className="relative aspect-video w-full bg-navy/5">
+                              {youTubeId ? (
+                                <>
+                                  <img
+                                    src={getYouTubeThumbnail(youTubeId)}
+                                    alt=""
+                                    loading="lazy"
+                                    className="h-full w-full object-cover"
+                                  />
 
-                            {/* REMOVE */}
-                            <button
-                              type="button"
-                              onClick={() =>
-                                removeMedia(index)
-                              }
-                              aria-label={`Remove ${media.type}`}
-                              className="absolute right-2 top-2 flex h-7 w-7 items-center justify-center rounded-full bg-navy-dark/70 text-ivory hover:bg-red-600"
-                            >
-                              <X size={14} />
-                            </button>
+                                  <span
+                                    className="pointer-events-none absolute inset-0 flex items-center justify-center"
+                                    aria-hidden="true"
+                                  >
+                                    <span className="flex h-11 w-11 items-center justify-center rounded-full bg-navy-dark/70 text-ivory">
+                                      <Play
+                                        size={18}
+                                        className="ml-0.5 fill-current"
+                                      />
+                                    </span>
+                                  </span>
+                                </>
+                              ) : media.type === "video" ? (
+                                /* Older blogs that still have an uploaded video */
+                                <video
+                                  src={getVideoSrc(media.url)}
+                                  poster={getVideoPoster(media.url)}
+                                  preload="metadata"
+                                  muted
+                                  playsInline
+                                  className="h-full w-full object-cover"
+                                />
+                              ) : (
+                                <img
+                                  src={media.url}
+                                  alt=""
+                                  loading="lazy"
+                                  className="h-full w-full object-cover"
+                                />
+                              )}
 
-                            {/* REORDER */}
-                            <div className="absolute bottom-2 right-2 flex gap-1">
+                              {/* TYPE BADGE */}
+                              <span className="absolute left-2 top-2 rounded-full bg-navy-dark/70 px-2 py-0.5 text-[10px] font-semibold uppercase text-ivory">
+                                {youTubeId ? "YouTube" : media.type}
+                              </span>
+
+                              {/* REMOVE */}
                               <button
                                 type="button"
-                                onClick={() =>
-                                  moveMedia(index, -1)
-                                }
-                                disabled={index === 0}
-                                aria-label="Move earlier"
-                                className="flex h-7 w-7 items-center justify-center rounded-full bg-navy-dark/70 text-ivory hover:bg-navy-dark disabled:opacity-40"
+                                onClick={() => removeMedia(index)}
+                                aria-label={`Remove ${media.type}`}
+                                className="absolute right-2 top-2 flex h-7 w-7 items-center justify-center rounded-full bg-navy-dark/70 text-ivory hover:bg-red-600"
                               >
-                                <ChevronUp size={14} />
+                                <X size={14} />
                               </button>
 
-                              <button
-                                type="button"
-                                onClick={() =>
-                                  moveMedia(index, 1)
-                                }
-                                disabled={
-                                  index ===
-                                  form.media.length - 1
-                                }
-                                aria-label="Move later"
-                                className="flex h-7 w-7 items-center justify-center rounded-full bg-navy-dark/70 text-ivory hover:bg-navy-dark disabled:opacity-40"
-                              >
-                                <ChevronDown size={14} />
-                              </button>
+                              {/* REORDER */}
+                              <div className="absolute bottom-2 right-2 flex gap-1">
+                                <button
+                                  type="button"
+                                  onClick={() => moveMedia(index, -1)}
+                                  disabled={index === 0}
+                                  aria-label="Move earlier"
+                                  className="flex h-7 w-7 items-center justify-center rounded-full bg-navy-dark/70 text-ivory hover:bg-navy-dark disabled:opacity-40"
+                                >
+                                  <ChevronUp size={14} />
+                                </button>
+
+                                <button
+                                  type="button"
+                                  onClick={() => moveMedia(index, 1)}
+                                  disabled={
+                                    index === form.media.length - 1
+                                  }
+                                  aria-label="Move later"
+                                  className="flex h-7 w-7 items-center justify-center rounded-full bg-navy-dark/70 text-ivory hover:bg-navy-dark disabled:opacity-40"
+                                >
+                                  <ChevronDown size={14} />
+                                </button>
+                              </div>
                             </div>
-                          </div>
 
-                          {/* CAPTION */}
-                          <input
-                            type="text"
-                            value={media.caption}
-                            onChange={(e) =>
-                              changeMediaCaption(
-                                index,
-                                e.target.value
-                              )
-                            }
-                            placeholder="Caption (optional)"
-                            maxLength={200}
-                            className="w-full border-t border-navy/10 px-3 py-2 text-sm outline-none focus:bg-navy/[0.03]"
-                          />
-                        </li>
-                      ))}
+                            {/* CAPTION */}
+                            <input
+                              type="text"
+                              value={media.caption}
+                              onChange={(e) =>
+                                changeMediaCaption(index, e.target.value)
+                              }
+                              placeholder="Caption (optional)"
+                              maxLength={200}
+                              className="w-full border-t border-navy/10 px-3 py-2 text-sm outline-none focus:bg-navy/[0.03]"
+                            />
+                          </li>
+                        );
+                      })}
                     </ul>
                   </div>
                 )}
@@ -789,13 +952,9 @@ export default function BlogsManage() {
                   onChange={handleChange}
                   className="w-full border border-navy/15 rounded-lg px-4 py-3 bg-white outline-none focus:border-secondary"
                 >
-                  <option value="draft">
-                    Draft
-                  </option>
+                  <option value="draft">Draft</option>
 
-                  <option value="published">
-                    Published
-                  </option>
+                  <option value="published">Published</option>
                 </select>
               </div>
 
@@ -836,24 +995,9 @@ export default function BlogsManage() {
         </div>
       )}
     </div>
+  </>
   );
 }
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
 
 
 

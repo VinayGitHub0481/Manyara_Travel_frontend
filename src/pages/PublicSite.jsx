@@ -13,12 +13,14 @@ import { useState } from "react";
 import OfferBanner from "../components/OfferBanner";
 import BatchSection from "../components/BatchSection";
 import ContactSection from "../components/ContactSection";
+import SectionDivider, {ATMOSPHERE as A} from "../components/SectionDivider";
+import SeasonalSection from "../components/SeasonalSection";
 
 const homeJsonLd = [
   {
     "@context": "https://schema.org",
     "@type": "TravelAgency",
-    name: "On a Trip Holiday",
+    name: "Manyara Prive Vacations Holiday",
     url: SITE_URL,
     description:
       "Honest, curated travel packages to India's most-visited destinations, planned by people who've actually been there.",
@@ -26,7 +28,7 @@ const homeJsonLd = [
   {
     "@context": "https://schema.org",
     "@type": "WebSite",
-    name: "On a Trip Holiday",
+    name: "Manyara Prive Vacations Holiday",
     url: SITE_URL,
   },
 ];
@@ -47,27 +49,36 @@ export default function PublicSite({onPlanTrip}) {
 
 <Hero onPlanTrip={onPlanTrip} />
 
+
 <OfferBanner />
+
+<DestinationSection />
+
+<SeasonalSection />
+
+<SectionDivider variant="ticket" color={A.blush} />
+
 
 <PackagesSection />
 
 
-<DestinationSection />
-
-<BatchSection />
-
-
 <HappyMomentsSection />
 
-<TestimonialsSection />
+<SectionDivider vairant="line" color={A.blush} />
 
 <AboutSection />
 
+<TestimonialsSection />
+
+
+<SectionDivider vairant="line" color={A.blush} />
+
 <BlogSection />
+<ContactSection />
 
 <FAQSection />
 
-<ContactSection />
+<SectionDivider vriant="curve" from={A.alt} to={A.ink} />
 
 <Footer />
 

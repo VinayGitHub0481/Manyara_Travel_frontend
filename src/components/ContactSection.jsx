@@ -1,53 +1,38 @@
 
-
-import { useEffect, useState } from "react";
-import { PhoneCall, Plane, ArrowRight } from "lucide-react";
+import { PhoneCall, Plane, ArrowRight, Headphones, Sparkles } from "lucide-react";
 import { FaWhatsapp } from "react-icons/fa";
 import { Link } from "react-router-dom";
+
 import { getSiteSettings } from "../api/content";
+import { useQuery } from "../hooks/useQuery";
+import { RevealGroup } from "./Reveal";
+
+const BRAND_NAME = "Manyara Privé Vacations";
 
 export default function ContactSection() {
-  const [settings, setSettings] = useState(null);
-  const [loading, setLoading] = useState(true);
+  // ============================================================
+  // SITE SETTINGS (shared cached query, same as the rest of the site)
+  // ============================================================
 
-  // ============================================================
-  // LOAD SITE SETTINGS
-  // ============================================================
-  useEffect(() => {
-    const loadSettings = async () => {
-      try {
-        const data = await getSiteSettings();
-        setSettings(data);
-      } catch (error) {
-        console.error("Failed to load contact settings:", error);
-        setSettings(null);
-      } finally {
-        setLoading(false);
-      }
-    };
+  const { data: settings, loading } = useQuery(getSiteSettings);
 
-    loadSettings();
-  }, []);
-
-  // ============================================================
-  // SETTINGS
-  // ============================================================
   const phoneNumber = settings?.phone_number?.trim() || "";
   const whatsappNumber = settings?.whatsapp_number?.trim() || "";
 
   // ============================================================
   // CLEAN NUMBERS
   // ============================================================
+
   const phoneDigits = phoneNumber.replace(/\D/g, "");
   const whatsappDigits = whatsappNumber.replace(/\D/g, "");
 
   // ============================================================
-  // URLS
+  // CONTACT URLS
   // ============================================================
+
   const phoneUrl = phoneDigits ? `tel:+${phoneDigits}` : "#";
 
-  const whatsappMessage =
-    "Hello On a Trip Holidays, I would like to know more about your travel packages.";
+  const whatsappMessage = `Hello ${BRAND_NAME}, I would like to know more about your travel packages.`;
 
   const whatsappUrl = whatsappDigits
     ? `https://wa.me/${whatsappDigits}?text=${encodeURIComponent(
@@ -58,297 +43,719 @@ export default function ContactSection() {
   return (
     <section
       id="contact"
-      className="
-        scroll-mt-20
-        w-full
-        bg-ivory
-        py-14
-        sm:py-16
-        lg:py-20
-      "
+      className="relative w-full overflow-x-clip bg-gradient-to-b from-background to-primary-lighter py-14 sm:py-16 lg:py-24"
     >
-      <div
-        className="
-          max-w-5xl
-          mx-auto
-          px-4
-          sm:px-6
-          lg:px-8
-        "
-      >
-        <div className="text-center">
-          {/* ==================================================
-              SECTION LABEL
-          ================================================== */}
+      <div className="mx-auto w-full max-w-6xl px-4 sm:px-6 lg:px-8">
+        {/* ========================================================
+            CONTACT CARD
+        ======================================================== */}
+
+        <div className="relative overflow-hidden rounded-[1.75rem] border border-divider bg-white px-5 py-10 shadow-[0_15px_50px_rgba(47,42,51,0.06)] sm:rounded-[2rem] sm:px-8 sm:py-12 lg:px-12 lg:py-14">
+          {/* ======================================================
+              SOFT DECORATION (one quiet glow + one hairline)
+          ====================================================== */}
+
           <div
-            className="
-              inline-flex
-              items-center
-              gap-2
-              text-accent
-              font-semibold
-              text-xs
-              sm:text-sm
-              uppercase
-              tracking-wider
-              mb-3
-            "
-          >
-            <Plane
-              className="w-4 h-4 sm:w-5 sm:h-5"
-              aria-hidden="true"
-            />
+            className="pointer-events-none absolute -right-24 -top-24 h-72 w-72 rounded-full bg-[radial-gradient(circle,rgba(232,40,111,0.09),transparent_70%)]"
+            aria-hidden="true"
+          />
 
-            Contact Us
-          </div>
-
-          {/* ==================================================
-              HEADING
-          ================================================== */}
-          <h2
-            className="
-              font-display
-              text-2xl
-              sm:text-3xl
-              md:text-4xl
-              lg:text-5xl
-              font-semibold
-              text-navy
-              leading-tight
-            "
-          >
-            Ready to Plan Your Next Journey?
-          </h2>
-
-          {/* ==================================================
-              DESCRIPTION
-          ================================================== */}
-          <p
-            className="
-              max-w-2xl
-              mx-auto
-              mt-4
-              text-sm
-              sm:text-base
-              md:text-lg
-              text-navy/65
-              leading-relaxed
-            "
-          >
-            Have questions about a destination, package,
-            or custom trip? Our travel experts are here to
-            help you plan a memorable journey that fits
-            your interests and budget.
-          </p>
-
-          {/* ==================================================
-              CONTACT BUTTONS
-          ================================================== */}
           <div
-            className="
-              mt-7
-              sm:mt-8
-              flex
-              flex-col
-              sm:flex-row
-              items-center
-              justify-center
-              gap-3
-              sm:gap-4
-            "
-          >
+            className="pointer-events-none absolute left-1/2 top-0 h-px w-24 -translate-x-1/2 bg-accent-bright/40"
+            aria-hidden="true"
+          />
 
-       {/* ==================================================
-                WHATSAPP
-            ================================================== */}
-            {whatsappDigits && (
-              <a
-                href={whatsappUrl}
-                target="_blank"
-                rel="noopener noreferrer"
-                aria-label="Chat with On a Trip Holidays on WhatsApp"
-                className="
-                  inline-flex
-                  w-full
-                  sm:w-auto
-                  items-center
-                  justify-center
-                  gap-2
-                  rounded-full
-                  bg-[#25D366]
-                  px-4
-                  py-2
-                  text-sm
-                  font-semibold
-                  text-white
-                  shadow-sm
-                  transition-all
-                  duration-200
-                  hover:scale-[1.02]
-                  hover:bg-[#20bd5a]
-                  sm:gap-2.5
-                  sm:px-5
-                  sm:py-2.5
-                  sm:text-sm
-                "
-              >
-                {/* WhatsApp Icon */}
-                <span
-                  className="
-                    flex
-                    h-7
-                    w-7
-                    shrink-0
-                    items-center
-                    justify-center
-                    rounded-full
-                    bg-white
-                    text-[#25D366]
-                    sm:h-8
-                    sm:w-8
-                  "
-                >
-                  <FaWhatsapp
-                    className="h-4 w-4 sm:h-[18px] sm:w-[18px]"
-                    aria-hidden="true"
-                  />
-                </span>
+          {/* Direct children reveal one after another */}
+          <RevealGroup className="relative z-10 text-center">
+            {/* ====================================================
+                LABEL
+            ==================================================== */}
 
-                <span>WhatsApp</span>
-              </a>
-            )}
+            <div>
+              <div className="inline-flex items-center gap-1.5 rounded-full border border-accent/15 bg-surface-soft px-3 py-1.5 text-[11px] font-semibold uppercase tracking-[0.16em] text-accent-hover sm:text-xs">
+                <Plane
+                  className="h-3 w-3 sm:h-3.5 sm:w-3.5"
+                  strokeWidth={1.8}
+                  aria-hidden="true"
+                />
 
-            {/* ==================================================
-                            PHONE
-                        ================================================== */}
-            {phoneDigits && (
-              <a
-                href={phoneUrl}
-                aria-label="Call On a Trip Holidays"
-                className="
-                  inline-flex
-                  w-full
-                  sm:w-auto
-                  items-center
-                  justify-center
-                  gap-2
-                  rounded-full
-                  bg-navy
-                  px-4
-                  py-2
-                  text-sm
-                  font-semibold
-                  text-ivory
-                  shadow-sm
-                  transition-all
-                  duration-200
-                  hover:scale-[1.02]
-                  hover:bg-navy-light
-                  sm:gap-2.5
-                  sm:px-5
-                  sm:py-2.5
-                  sm:text-sm
-                "
-              >
-                {/* Phone Icon */}
-                <span
-                  className="
-                    flex
-                    h-7
-                    w-7
-                    shrink-0
-                    items-center
-                    justify-center
-                    rounded-full
-                    bg-white/10
-                    sm:h-8
-                    sm:w-8
-                  "
-                >
-                  <PhoneCall
-                    className="h-4 w-4 sm:h-[18px] sm:w-[18px]"
-                    aria-hidden="true"
-                  />
-                </span>
+                <span>Contact Us</span>
+              </div>
+            </div>
 
-                <span>Call Us</span>
-              </a>
-            )}
+            {/* ====================================================
+                HEADING
+            ==================================================== */}
 
-            {/* ==================================================
-                            FULL CONTACT PAGE
-                        ================================================== */}
-            <Link
-              to="/contact"
-              className="
-                inline-flex
-                w-full
-                sm:w-auto
-                items-center
-                justify-center
-                gap-1.5
-                rounded-full
-                border
-                border-navy/15
-                bg-white
-                px-4
-                py-2
-                text-sm
-                font-semibold
-                text-navy
-                transition-all
-                duration-200
-                hover:scale-[1.02]
-                hover:border-navy/30
-                hover:bg-navy/5
-                sm:gap-2
-                sm:px-5
-                sm:py-2.5
-                sm:text-sm
-              "
-            >
-              <span>More Contact Details</span>
+            <h2 className="mx-auto mt-3 max-w-3xl font-display text-3xl font-semibold leading-tight tracking-tight text-text-dark sm:text-4xl lg:text-[2.75rem]">
+              Ready to Plan Your Next Journey?
+            </h2>
 
-              <ArrowRight
-                className="h-4 w-4 shrink-0 sm:h-[18px] sm:w-[18px]"
+            {/* ====================================================
+                DESCRIPTION
+            ==================================================== */}
+
+            <p className="mx-auto mt-3 max-w-2xl text-sm leading-6 text-text-secondary sm:mt-4 sm:text-base sm:leading-7">
+              Have questions about a destination, package, or custom trip? Our
+              travel experts are here to help you plan a memorable journey that
+              fits your interests and budget.
+            </p>
+
+            {/* ====================================================
+                SUPPORT HIGHLIGHTS
+            ==================================================== */}
+
+            <div className="mt-5 flex flex-wrap items-center justify-center gap-x-5 gap-y-2 text-xs font-medium text-muted sm:mt-6 sm:text-sm">
+              <span className="inline-flex items-center gap-1.5">
+                <Headphones
+                  className="h-4 w-4 text-accent"
+                  strokeWidth={1.8}
+                  aria-hidden="true"
+                />
+                Travel assistance
+              </span>
+
+              <span
+                className="hidden h-1 w-1 rounded-full bg-border-strong sm:block"
                 aria-hidden="true"
               />
-            </Link>
 
-          </div>
+              <span className="inline-flex items-center gap-1.5">
+                <Sparkles
+                  className="h-4 w-4 text-accent"
+                  strokeWidth={1.8}
+                  aria-hidden="true"
+                />
+                Personalized trips
+              </span>
+            </div>
 
-          {/* ==================================================
-              SUPPORTING TEXT
-          ================================================== */}
-          <p
-            className="
-              mt-5
-              sm:mt-6
-              text-xs
-              sm:text-sm
-              text-navy/45
-            "
-          >
-            Available for travel enquiries, package details
-            & trip planning
-          </p>
+            {/* ====================================================
+                CONTACT BUTTONS
+                Call = brand accent (primary CTA)
+            ==================================================== */}
 
-          {!loading && (phoneDigits || whatsappDigits) && (
-            <p
-              className="
-                mt-2
-                text-xs
-                text-navy/40
-              "
-            >
-              We're happy to help you plan your next trip.
+            <div className="mt-7 flex flex-col items-center justify-center gap-3 sm:mt-8 sm:flex-row">
+              {/* PHONE (primary) */}
+              {phoneDigits && (
+                <a
+                  href={phoneUrl}
+                  aria-label={`Call ${BRAND_NAME}`}
+                  className="inline-flex min-h-[44px] w-full items-center justify-center gap-2 rounded-full bg-accent px-5 py-3 text-sm font-semibold text-white shadow-brand transition-all duration-200 hover:-translate-y-0.5 hover:bg-accent-hover focus:outline-none focus:ring-2 focus:ring-accent/40 focus:ring-offset-2 focus:ring-offset-white sm:w-auto sm:px-6"
+                >
+                  <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-white/15">
+                    <PhoneCall
+                      className="h-3.5 w-3.5"
+                      strokeWidth={1.8}
+                      aria-hidden="true"
+                    />
+                  </span>
+
+                  <span>Call Us</span>
+                </a>
+              )}
+
+              {/* WHATSAPP
+                  Deeper WhatsApp green so white text stays readable */}
+              {whatsappDigits && (
+                <a
+                  href={whatsappUrl}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  aria-label={`Chat with ${BRAND_NAME} on WhatsApp`}
+                  className="inline-flex min-h-[44px] w-full items-center justify-center gap-2 rounded-full bg-[#128C7E] px-5 py-3 text-sm font-semibold text-white shadow-[0_6px_18px_rgba(18,140,126,0.18)] transition-all duration-200 hover:-translate-y-0.5 hover:bg-[#0F766B] focus:outline-none focus:ring-2 focus:ring-[#128C7E]/40 focus:ring-offset-2 focus:ring-offset-white sm:w-auto sm:px-6"
+                >
+                  <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-white text-[#128C7E]">
+                    <FaWhatsapp className="h-3.5 w-3.5" aria-hidden="true" />
+                  </span>
+
+                  <span>WhatsApp</span>
+                </a>
+              )}
+
+              {/* CONTACT PAGE */}
+              <Link
+                to="/contact"
+                className="group inline-flex min-h-[44px] w-full items-center justify-center gap-1.5 rounded-full border border-border bg-white px-5 py-3 text-sm font-semibold text-text-dark transition-all duration-200 hover:-translate-y-0.5 hover:border-accent/40 hover:bg-surface-soft hover:text-accent-hover focus:outline-none focus:ring-2 focus:ring-accent/30 focus:ring-offset-2 focus:ring-offset-white sm:w-auto sm:px-6"
+              >
+                <span>More Contact Details</span>
+
+                <ArrowRight
+                  className="arrow-shift h-4 w-4 shrink-0"
+                  strokeWidth={1.8}
+                  aria-hidden="true"
+                />
+              </Link>
+            </div>
+
+            {/* ====================================================
+                SUPPORTING TEXT
+            ==================================================== */}
+
+            <p className="mt-5 text-xs text-muted sm:mt-6 sm:text-sm">
+              Available for travel enquiries, package details &amp; trip
+              planning
+              {!loading && (phoneDigits || whatsappDigits)
+                ? ". We\u2019re happy to help you plan your next trip."
+                : ""}
             </p>
-          )}
+          </RevealGroup>
         </div>
       </div>
     </section>
   );
 }
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+// import { useEffect, useState } from "react";
+// import { PhoneCall, Plane, ArrowRight, Headphones, Sparkles } from "lucide-react";
+// import { FaWhatsapp } from "react-icons/fa";
+// import { Link } from "react-router-dom";
+// import { getSiteSettings } from "../api/content";
+
+// export default function ContactSection() {
+//   const [settings, setSettings] = useState(null);
+//   const [loading, setLoading] = useState(true);
+
+//   // ============================================================
+//   // LOAD SITE SETTINGS
+//   // ============================================================
+
+//   useEffect(() => {
+//     const loadSettings = async () => {
+//       try {
+//         const data = await getSiteSettings();
+//         setSettings(data);
+//       } catch (error) {
+//         console.error("Failed to load contact settings:", error);
+//         setSettings(null);
+//       } finally {
+//         setLoading(false);
+//       }
+//     };
+
+//     loadSettings();
+//   }, []);
+
+//   // ============================================================
+//   // SETTINGS
+//   // ============================================================
+
+//   const phoneNumber = settings?.phone_number?.trim() || "";
+//   const whatsappNumber = settings?.whatsapp_number?.trim() || "";
+
+//   // ============================================================
+//   // CLEAN NUMBERS
+//   // ============================================================
+
+//   const phoneDigits = phoneNumber.replace(/\D/g, "");
+//   const whatsappDigits = whatsappNumber.replace(/\D/g, "");
+
+//   // ============================================================
+//   // CONTACT URLS
+//   // ============================================================
+
+//   const phoneUrl = phoneDigits ? `tel:+${phoneDigits}` : "#";
+
+//   const whatsappMessage =
+//     "Hello On a Trip Holidays, I would like to know more about your travel packages.";
+
+//   const whatsappUrl = whatsappDigits
+//     ? `https://wa.me/${whatsappDigits}?text=${encodeURIComponent(
+//         whatsappMessage
+//       )}`
+//     : "#";
+
+//   return (
+//     // <section
+//     //   id="contact"
+//     //   className="
+//     //     scroll-mt-20
+//     //     w-full
+//     //     bg-[#F8F5EF]
+//     //     py-12
+//     //     sm:py-14
+//     //     lg:py-16
+//     //   "
+//     // >
+//     //   <div className="mx-auto w-full max-w-6xl px-4 sm:px-6 lg:px-8">
+
+
+//         <section
+//       id="contact"
+//       className="relative w-full bg-gradient-to-b from-background to-primary-lighter py-14 sm:py-16 lg:py-20"
+//     >
+//       {/* contact card: replace its className with: */}
+//       <div className="relative overflow-hidden rounded-[1.75rem] border border-divider bg-white px-5 py-9 shadow-[0_15px_50px_rgba(47,42,51,0.06)] sm:rounded-[2rem] sm:px-8 sm:py-11 lg:px-12 lg:py-12">
+
+//         {/* ========================================================
+//             CONTACT CARD
+//         ======================================================== */}
+
+//         <div
+//           className="
+//             relative
+//             overflow-hidden
+//             rounded-[1.75rem]
+//             border
+//             border-[#E8DFD0]
+//             bg-[#FFFDF9]
+//             px-5
+//             py-9
+//             shadow-[0_15px_50px_rgba(6,27,69,0.06)]
+//             sm:rounded-[2rem]
+//             sm:px-8
+//             sm:py-11
+//             lg:px-12
+//             lg:py-12
+//           "
+//         >
+//           {/* ======================================================
+//               SOFT DECORATION
+//           ====================================================== */}
+
+//           <div
+//             className="
+//               pointer-events-none
+//               absolute
+//               -right-24
+//               -top-24
+//               h-60
+//               w-60
+//               rounded-full
+//               bg-[#FF5A2A]/[0.055]
+//               blur-3xl
+//             "
+//             aria-hidden="true"
+//           />
+
+//           <div
+//             className="
+//               pointer-events-none
+//               absolute
+//               -bottom-28
+//               -left-24
+//               h-64
+//               w-64
+//               rounded-full
+//               bg-[#D9C8A9]/[0.12]
+//               blur-3xl
+//             "
+//             aria-hidden="true"
+//           />
+
+//           <div
+//             className="
+//               pointer-events-none
+//               absolute
+//               left-1/2
+//               top-0
+//               h-px
+//               w-24
+//               -translate-x-1/2
+//               bg-[#FF5A2A]/25
+//             "
+//             aria-hidden="true"
+//           />
+
+//           <div className="relative z-10 text-center">
+//             {/* ====================================================
+//                 LABEL
+//             ==================================================== */}
+
+//             <div
+//               className="
+//                 mb-3
+//                 inline-flex
+//                 items-center
+//                 gap-1.5
+//                 rounded-full
+//                 border
+//                 border-[#FF5A2A]/15
+//                 bg-[#FF5A2A]/[0.055]
+//                 px-3
+//                 py-1.5
+//                 text-[10px]
+//                 font-semibold
+//                 uppercase
+//                 tracking-[0.16em]
+//                 text-[#E94A21]
+//                 sm:text-xs
+//               "
+//             >
+//               <Plane
+//                 className="h-3 w-3 sm:h-3.5 sm:w-3.5"
+//                 strokeWidth={1.8}
+//                 aria-hidden="true"
+//               />
+
+//               <span>Contact Us</span>
+//             </div>
+
+//             {/* ====================================================
+//                 HEADING
+//             ==================================================== */}
+
+//             <h2
+//               className="
+//                 mx-auto
+//                 max-w-3xl
+//                 font-display
+//                 text-2xl
+//                 font-semibold
+//                 leading-tight
+//                 tracking-tight
+//                 text-[#061B45]
+//                 sm:text-3xl
+//                 md:text-4xl
+//                 lg:text-[2.65rem]
+//               "
+//             >
+//               Ready to Plan Your Next Journey?
+//             </h2>
+
+//             {/* ====================================================
+//                 DESCRIPTION
+//             ==================================================== */}
+
+//             <p
+//               className="
+//                 mx-auto
+//                 mt-3
+//                 max-w-2xl
+//                 text-sm
+//                 leading-6
+//                 text-[#061B45]/60
+//                 sm:mt-4
+//                 sm:text-base
+//                 sm:leading-7
+//               "
+//             >
+//               Have questions about a destination, package, or custom trip?
+//               Our travel experts are here to help you plan a memorable
+//               journey that fits your interests and budget.
+//             </p>
+
+//             {/* ====================================================
+//                 SMALL SUPPORT HIGHLIGHTS
+//             ==================================================== */}
+
+//             <div
+//               className="
+//                 mt-5
+//                 flex
+//                 flex-wrap
+//                 items-center
+//                 justify-center
+//                 gap-x-5
+//                 gap-y-2
+//                 text-[11px]
+//                 font-medium
+//                 text-[#061B45]/50
+//                 sm:mt-6
+//                 sm:text-xs
+//               "
+//             >
+//               <span className="inline-flex items-center gap-1.5">
+//                 <Headphones
+//                   className="h-3.5 w-3.5 text-[#FF5A2A]"
+//                   strokeWidth={1.8}
+//                   aria-hidden="true"
+//                 />
+//                 Travel assistance
+//               </span>
+
+//               <span
+//                 className="hidden h-1 w-1 rounded-full bg-[#D8CCBA] sm:block"
+//                 aria-hidden="true"
+//               />
+
+//               <span className="inline-flex items-center gap-1.5">
+//                 <Sparkles
+//                   className="h-3.5 w-3.5 text-[#FF5A2A]"
+//                   strokeWidth={1.8}
+//                   aria-hidden="true"
+//                 />
+//                 Personalized trips
+//               </span>
+//             </div>
+
+//             {/* ====================================================
+//                 CONTACT BUTTONS
+//             ==================================================== */}
+
+//             <div
+//               className="
+//                 mt-6
+//                 flex
+//                 flex-col
+//                 items-center
+//                 justify-center
+//                 gap-2.5
+//                 sm:mt-7
+//                 sm:flex-row
+//                 sm:gap-3
+//               "
+//             >
+//               {/* ==================================================
+//                   WHATSAPP
+//               ================================================== */}
+
+//               {whatsappDigits && (
+//                 <a
+//                   href={whatsappUrl}
+//                   target="_blank"
+//                   rel="noopener noreferrer"
+//                   aria-label="Chat with On a Trip Holidays on WhatsApp"
+//                   className="
+//                     inline-flex
+//                     w-full
+//                     items-center
+//                     justify-center
+//                     gap-2
+//                     rounded-full
+//                     bg-[#25D366]
+//                     px-4
+//                     py-2.5
+//                     text-xs
+//                     font-semibold
+//                     text-white
+//                     shadow-[0_6px_18px_rgba(37,211,102,0.14)]
+//                     transition-all
+//                     duration-200
+//                     hover:-translate-y-0.5
+//                     hover:bg-[#20BD5A]
+//                     hover:shadow-[0_9px_22px_rgba(37,211,102,0.18)]
+//                     focus:outline-none
+//                     focus:ring-2
+//                     focus:ring-[#25D366]/30
+//                     focus:ring-offset-2
+//                     focus:ring-offset-[#FFFDF9]
+//                     sm:w-auto
+//                     sm:px-5
+//                   "
+//                 >
+//                   <span
+//                     className="
+//                       flex
+//                       h-6
+//                       w-6
+//                       shrink-0
+//                       items-center
+//                       justify-center
+//                       rounded-full
+//                       bg-white
+//                       text-[#25D366]
+//                     "
+//                   >
+//                     <FaWhatsapp
+//                       className="h-3.5 w-3.5"
+//                       aria-hidden="true"
+//                     />
+//                   </span>
+
+//                   <span>WhatsApp</span>
+//                 </a>
+//               )}
+
+//               {/* ==================================================
+//                   PHONE
+//               ================================================== */}
+
+//               {phoneDigits && (
+//                 <a
+//                   href={phoneUrl}
+//                   aria-label="Call On a Trip Holidays"
+//                   className="
+//                     inline-flex
+//                     w-full
+//                     items-center
+//                     justify-center
+//                     gap-2
+//                     rounded-full
+//                     bg-[#061B45]
+//                     px-4
+//                     py-2.5
+//                     text-xs
+//                     font-semibold
+//                     text-white
+//                     shadow-[0_6px_18px_rgba(6,27,69,0.12)]
+//                     transition-all
+//                     duration-200
+//                     hover:-translate-y-0.5
+//                     hover:bg-[#0B2559]
+//                     hover:shadow-[0_9px_22px_rgba(6,27,69,0.16)]
+//                     focus:outline-none
+//                     focus:ring-2
+//                     focus:ring-[#061B45]/25
+//                     focus:ring-offset-2
+//                     focus:ring-offset-[#FFFDF9]
+//                     sm:w-auto
+//                     sm:px-5
+//                   "
+//                 >
+//                   <span
+//                     className="
+//                       flex
+//                       h-6
+//                       w-6
+//                       shrink-0
+//                       items-center
+//                       justify-center
+//                       rounded-full
+//                       bg-white/10
+//                     "
+//                   >
+//                     <PhoneCall
+//                       className="h-3.5 w-3.5"
+//                       strokeWidth={1.8}
+//                       aria-hidden="true"
+//                     />
+//                   </span>
+
+//                   <span>Call Us</span>
+//                 </a>
+//               )}
+
+//               {/* ==================================================
+//                   CONTACT PAGE
+//               ================================================== */}
+
+//               <Link
+//                 to="/contact"
+//                 className="
+//                   group
+//                   inline-flex
+//                   w-full
+//                   items-center
+//                   justify-center
+//                   gap-1.5
+//                   rounded-full
+//                   border
+//                   border-[#061B45]/10
+//                   bg-white
+//                   px-4
+//                   py-2.5
+//                   text-xs
+//                   font-semibold
+//                   text-[#061B45]
+//                   shadow-[0_3px_12px_rgba(6,27,69,0.035)]
+//                   transition-all
+//                   duration-200
+//                   hover:-translate-y-0.5
+//                   hover:border-[#FF5A2A]/25
+//                   hover:bg-[#FFF8F3]
+//                   hover:text-[#E94A21]
+//                   focus:outline-none
+//                   focus:ring-2
+//                   focus:ring-[#FF5A2A]/25
+//                   focus:ring-offset-2
+//                   focus:ring-offset-[#FFFDF9]
+//                   sm:w-auto
+//                   sm:px-5
+//                 "
+//               >
+//                 <span>More Contact Details</span>
+
+//                 <ArrowRight
+//                   className="
+//                     h-3.5
+//                     w-3.5
+//                     shrink-0
+//                     transition-transform
+//                     duration-200
+//                     group-hover:translate-x-0.5
+//                     sm:h-4
+//                     sm:w-4
+//                   "
+//                   strokeWidth={1.8}
+//                   aria-hidden="true"
+//                 />
+//               </Link>
+//             </div>
+
+//             {/* ====================================================
+//                 SUPPORTING TEXT
+//             ==================================================== */}
+
+//             <p
+//               className="
+//                 mt-4
+//                 text-[10px]
+//                 text-[#061B45]/40
+//                 sm:mt-5
+//                 sm:text-xs
+//               "
+//             >
+//               Available for travel enquiries, package details &amp; trip
+//               planning
+//             </p>
+
+//             {!loading && (phoneDigits || whatsappDigits) && (
+//               <p
+//                 className="
+//                   mt-1.5
+//                   text-[10px]
+//                   text-[#061B45]/30
+//                   sm:text-xs
+//                 "
+//               >
+//                 We&apos;re happy to help you plan your next trip.
+//               </p>
+//             )}
+//           </div>
+//         </div>
+//       </div>
+//     </section>
+//   );
+// }
+
+
+
+
+
+
+
+
+
+
+
 
 
 

@@ -1,53 +1,130 @@
+
+
 import { Helmet } from "react-helmet-async";
 
-const SITE_NAME = "On a Trip Holiday";
-const SITE_URL = "https://onatripholidays.com";
+const SITE_NAME = "Manyara Prive Vacations";
+const SITE_URL = "https://manyaraprive.com";
 const DEFAULT_IMAGE = `${SITE_URL}/og-default.jpg`;
 
-/**
- * Drop this at the top of any page/route to control that page's <title>,
- * meta description, canonical URL, Open Graph/Twitter tags, and optional
- * JSON-LD structured data.
- *
- * `jsonLd` accepts a single schema object OR an array of schema objects
- * (e.g. a page's main schema + a BreadcrumbList).
- */
+const DEFAULT_DESCRIPTION =
+  "Discover thoughtfully planned travel packages, destinations, and memorable holidays with Manyara Prive Vacations.";
+
 export default function Seo({
   title,
-  description,
+  description = DEFAULT_DESCRIPTION,
   path = "/",
   image = DEFAULT_IMAGE,
+  imageAlt = `${SITE_NAME} — Travel Packages and Vacations`,
   type = "website",
   noindex = false,
+  keywords,
   jsonLd,
 }) {
-  const fullTitle = title ? `${title} | ${SITE_NAME}` : `${SITE_NAME} — Travel Packages, Planned Simply`;
-  const canonical = `${SITE_URL}${path}`;
-  const schemas = Array.isArray(jsonLd) ? jsonLd : jsonLd ? [jsonLd] : [];
+  // Make sure path always produces a clean canonical URL
+  const normalizedPath = path.startsWith("/") ? path : `/${path}`;
+
+  const canonical = `${SITE_URL}${normalizedPath}`;
+
+  // Allow either a full image URL or a site-relative image path
+  const absoluteImage = image.startsWith("http")
+    ? image
+    : `${SITE_URL}${image.startsWith("/") ? image : `/${image}`}`;
+
+  const fullTitle = title
+    ? `${title} | ${SITE_NAME}`
+    : `${SITE_NAME} — Travel Packages, Planned Simply`;
+
+  const schemas = Array.isArray(jsonLd)
+    ? jsonLd
+    : jsonLd
+      ? [jsonLd]
+      : [];
 
   return (
     <Helmet>
-      <title>{fullTitle}</title>
-      {description && <meta name="description" content={description} />}
-      <link rel="canonical" href={canonical} />
-      {noindex && <meta name="robots" content="noindex, nofollow" />}
+      {/* =========================
+          BASIC SEO
+      ========================== */}
 
-      {/* Open Graph */}
+      <title>{fullTitle}</title>
+
+      <meta name="description" content={description} />
+
+      {keywords && (
+        <meta name="keywords" content={keywords} />
+      )}
+
+      <meta
+        name="robots"
+        content={
+          noindex
+            ? "noindex, nofollow"
+            : "index, follow"
+        }
+      />
+
+      <link rel="canonical" href={canonical} />
+
+      {/* =========================
+          OPEN GRAPH
+      ========================== */}
+
       <meta property="og:site_name" content={SITE_NAME} />
       <meta property="og:type" content={type} />
       <meta property="og:title" content={fullTitle} />
-      {description && <meta property="og:description" content={description} />}
+      <meta property="og:description" content={description} />
       <meta property="og:url" content={canonical} />
-      <meta property="og:image" content={image} />
+      <meta property="og:image" content={absoluteImage} />
+      <meta property="og:image:alt" content={imageAlt} />
+      <meta property="og:image:type" content="image/jpeg" />
+      <meta property="og:image:width" content="1200" />
+      <meta property="og:image:height" content="630" />
+      <meta property="og:locale" content="en_IN" />
 
-      {/* Twitter */}
-      <meta name="twitter:card" content="summary_large_image" />
+      {/* =========================
+          TWITTER / X
+      ========================== */}
+
+      <meta
+        name="twitter:card"
+        content="summary_large_image"
+      />
+
       <meta name="twitter:title" content={fullTitle} />
-      {description && <meta name="twitter:description" content={description} />}
-      <meta name="twitter:image" content={image} />
 
-      {schemas.map((schema, i) => (
-        <script key={i} type="application/ld+json">
+      <meta
+        name="twitter:description"
+        content={description}
+      />
+
+      <meta
+        name="twitter:image"
+        content={absoluteImage}
+      />
+
+      <meta
+        name="twitter:image:alt"
+        content={imageAlt}
+      />
+
+      {/* =========================
+          BROWSER / MOBILE
+      ========================== */}
+
+      <meta
+        name="theme-color"
+        content="#C8135E"
+      />
+
+      {/* =========================
+          STRUCTURED DATA
+      ========================== */}
+
+      {schemas.map((schema, index) => (
+        <script
+          key={`seo-schema-${index}`}
+          type="application/ld+json"
+        >
           {JSON.stringify(schema)}
         </script>
       ))}
@@ -55,4 +132,91 @@ export default function Seo({
   );
 }
 
-export { SITE_NAME, SITE_URL };
+export { SITE_NAME, SITE_URL, DEFAULT_IMAGE };
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+// import { Helmet } from "react-helmet-async";
+
+// const SITE_NAME = "Manyara Prive Vacations";
+// const SITE_URL = "https://manyaraprive.com";
+// const DEFAULT_IMAGE = `${SITE_URL}/og-default.jpg`;
+
+
+// export default function Seo({
+//   title,
+//   description,
+//   path = "/",
+//   image = DEFAULT_IMAGE,
+//   type = "website",
+//   noindex = false,
+//   jsonLd,
+// }) {
+//   const fullTitle = title ? `${title} | ${SITE_NAME}` : `${SITE_NAME} — Travel Packages, Planned Simply`;
+//   const canonical = `${SITE_URL}${path}`;
+//   const schemas = Array.isArray(jsonLd) ? jsonLd : jsonLd ? [jsonLd] : [];
+
+//   return (
+//     <Helmet>
+//       <title>{fullTitle}</title>
+//       {description && <meta name="description" content={description} />}
+//       <link rel="canonical" href={canonical} />
+//       {noindex && <meta name="robots" content="noindex, nofollow" />}
+
+//       {/* Open Graph */}
+//       <meta property="og:site_name" content={SITE_NAME} />
+//       <meta property="og:type" content={type} />
+//       <meta property="og:title" content={fullTitle} />
+//       {description && <meta property="og:description" content={description} />}
+//       <meta property="og:url" content={canonical} />
+//       <meta property="og:image" content={image} />
+
+//       {/* Twitter */}
+//       <meta name="twitter:card" content="summary_large_image" />
+//       <meta name="twitter:title" content={fullTitle} />
+//       {description && <meta name="twitter:description" content={description} />}
+//       <meta name="twitter:image" content={image} />
+
+//       {schemas.map((schema, i) => (
+//         <script key={i} type="application/ld+json">
+//           {JSON.stringify(schema)}
+//         </script>
+//       ))}
+//     </Helmet>
+//   );
+// }
+
+// export { SITE_NAME, SITE_URL };

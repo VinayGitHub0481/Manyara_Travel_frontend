@@ -1,24 +1,6 @@
 
 
-//import html2pdf from "html2pdf.js";
 
-/**
- * BatchItineraryPDF.jsx
- *
- * Generates and downloads a batch itinerary PDF on the client.
- *
- * Supports:
- *   generateBatchPDF(batch)
- *   generateBatchPDF({ batch, packageData })
- *
- * PAGE LAYOUT
- * - Page 1 is a cover (image, title, summary cards, About).
- * - Everything after the cover FLOWS continuously. There are no
- *   forced page breaks between sections, so short sections no
- *   longer leave mostly-empty pages.
- * - Itinerary day cards, list items and table rows are never
- *   split across two pages.
- */
 
 const COLORS = {
   navy: "#102040",

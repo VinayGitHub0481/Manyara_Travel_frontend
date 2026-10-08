@@ -1,3 +1,4 @@
+
 import { useEffect, useMemo, useState } from "react";
 import { Link, useSearchParams } from "react-router-dom";
 import {
@@ -11,13 +12,26 @@ import {
   SlidersHorizontal,
   X,
 } from "lucide-react";
+
 import { getPackages } from "../api/content";
+import { useQuery } from "../hooks/useQuery";
 import Footer from "../components/Footer";
 import Seo from "../components/Seo";
 import FAQSection from "../components/FAQSection";
+import { RevealGroup } from "../components/Reveal";
 
 /* ==========================================================
-   PACKAGE TYPE LABELS
+   BRAND
+   ========================================================== */
+
+const BRAND_NAME = "Manyara Prive Vacations";
+
+const SITE_URL = (
+  import.meta.env.VITE_SITE_URL || window.location.origin
+).replace(/\/$/, "");
+
+/* ==========================================================
+   CONSTANTS
    ========================================================== */
 
 const PACKAGE_TYPE_LABELS = {
@@ -30,16 +44,11 @@ const PACKAGE_TYPE_LABELS = {
   wildlife_nature: "Wildlife & Nature",
 };
 
-/* ==========================================================
-   PACKAGE COLLECTIONS
-   ========================================================== */
-
 const PACKAGE_COLLECTIONS = [
   {
     value: "all",
     label: "All Packages",
-    description:
-      "Explore all available holiday packages from On a Trip Holidays.",
+    description: `Explore all available holiday packages from ${BRAND_NAME}.`,
   },
   {
     value: "new",
@@ -56,8 +65,7 @@ const PACKAGE_COLLECTIONS = [
   {
     value: "featured",
     label: "Featured",
-    description:
-      "Explore handpicked featured holiday packages from On a Trip Holidays.",
+    description: `Explore handpicked featured holiday packages from ${BRAND_NAME}.`,
   },
   {
     value: "recommended",
@@ -74,14 +82,9 @@ const PACKAGE_COLLECTIONS = [
   {
     value: "popular",
     label: "Popular",
-    description:
-      "Discover popular holiday packages selected by On a Trip Holidays.",
+    description: `Discover popular holiday packages selected by ${BRAND_NAME}.`,
   },
 ];
-
-/* ==========================================================
-   COLLECTION → DATABASE FLAG
-   ========================================================== */
 
 const COLLECTION_FLAG_MAP = {
   new: "is_new",
@@ -92,9 +95,116 @@ const COLLECTION_FLAG_MAP = {
   popular: "is_popular",
 };
 
+const PRICE_OPTIONS = [
+  {
+    value: "all",
+    label: "Any price",
+  },
+  {
+    value: "under-25000",
+    label: "Under ₹25,000",
+  },
+  {
+    value: "25000-50000",
+    label: "₹25,000 – ₹50,000",
+  },
+  {
+    value: "50000-100000",
+    label: "₹50,000 – ₹1,00,000",
+  },
+  {
+    value: "100000-plus",
+    label: "Above ₹1,00,000",
+  },
+];
+
+const PRICE_TESTS = {
+  "under-25000": (price) => price < 25000,
+  "25000-50000": (price) => price >= 25000 && price <= 50000,
+  "50000-100000": (price) => price >= 50000 && price <= 100000,
+  "100000-plus": (price) => price > 100000,
+};
+
+const DURATION_OPTIONS = [
+  {
+    value: "all",
+    label: "Any duration",
+  },
+  {
+    value: "1-3",
+    label: "1 – 3 days",
+  },
+  {
+    value: "4-7",
+    label: "4 – 7 days",
+  },
+  {
+    value: "8-14",
+    label: "8 – 14 days",
+  },
+  {
+    value: "15-plus",
+    label: "15+ days",
+  },
+];
+
+const DURATION_TESTS = {
+  "1-3": (days) => days >= 1 && days <= 3,
+  "4-7": (days) => days >= 4 && days <= 7,
+  "8-14": (days) => days >= 8 && days <= 14,
+  "15-plus": (days) => days >= 15,
+};
+
+const SORT_OPTIONS = [
+  {
+    value: "recommended",
+    label: "Recommended",
+  },
+  {
+    value: "price-low",
+    label: "Price: Low to High",
+  },
+  {
+    value: "price-high",
+    label: "Price: High to Low",
+  },
+  {
+    value: "duration-short",
+    label: "Duration: Shortest",
+  },
+  {
+    value: "duration-long",
+    label: "Duration: Longest",
+  },
+  {
+    value: "newest",
+    label: "Newest",
+  },
+];
+
 /* ==========================================================
-   PACKAGE TYPE NORMALIZATION
+   THEME
    ========================================================== */
+
+const INPUT =
+  "w-full rounded-xl border border-rose-200/80 bg-white/80 px-4 py-3 text-sm text-text-dark outline-none transition-all placeholder:text-muted focus:border-primary focus:bg-white focus:ring-2 focus:ring-primary/20";
+
+const PRIMARY_BUTTON =
+  "inline-flex items-center justify-center gap-2 rounded-full bg-primary px-5 py-2.5 font-semibold text-white shadow-sm transition-all hover:-translate-y-0.5 hover:bg-primary-hover hover:shadow-md";
+
+/* ==========================================================
+   NORMALIZERS
+   ========================================================== */
+
+const TYPE_ALIASES = {
+  mountains_and_adventure: "mountains_adventure",
+  mountain_adventure: "mountains_adventure",
+  mountains: "mountains_adventure",
+  adventure: "mountains_adventure",
+  wildlife_and_nature: "wildlife_nature",
+  wildlife: "wildlife_nature",
+  nature: "wildlife_nature",
+};
 
 const normalizePackageType = (value) => {
   const normalized = String(value || "")
@@ -103,35 +213,8 @@ const normalizePackageType = (value) => {
     .replace(/&/g, "and")
     .replace(/[\s-]+/g, "_");
 
-  const aliases = {
-    pilgrimage: "pilgrimage",
-
-    family: "family",
-
-    beach: "beach",
-
-    romantic: "romantic",
-
-    international: "international",
-
-    mountains_and_adventure: "mountains_adventure",
-    mountain_adventure: "mountains_adventure",
-    mountains_adventure: "mountains_adventure",
-    mountains: "mountains_adventure",
-    adventure: "mountains_adventure",
-
-    wildlife_and_nature: "wildlife_nature",
-    wildlife_nature: "wildlife_nature",
-    wildlife: "wildlife_nature",
-    nature: "wildlife_nature",
-  };
-
-  return aliases[normalized] || normalized;
+  return TYPE_ALIASES[normalized] || normalized;
 };
-
-/* ==========================================================
-   DESTINATION NORMALIZATION
-   ========================================================== */
 
 const normalizeDestination = (value) =>
   String(value || "")
@@ -139,9 +222,12 @@ const normalizeDestination = (value) =>
     .toLowerCase()
     .replace(/\s+/g, " ");
 
-/* ==========================================================
-   COLLECTION NORMALIZATION
-   ========================================================== */
+const COLLECTION_ALIASES = {
+  newest: "new",
+  recommendation: "recommended",
+  mostvisited: "most-visited",
+  "most-visited-packages": "most-visited",
+};
 
 const normalizeCollection = (value) => {
   const normalized = String(value || "")
@@ -149,77 +235,56 @@ const normalizeCollection = (value) => {
     .toLowerCase()
     .replace(/[\s_]+/g, "-");
 
-  const aliases = {
-    all: "all",
-    new: "new",
-    newest: "new",
-    featured: "featured",
-    recommended: "recommended",
-    recommendation: "recommended",
-    trending: "trending",
-    popular: "popular",
-    "most-visited": "most-visited",
-    "mostvisited": "most-visited",
-    "most-visited-packages": "most-visited",
-    "most_visited": "most-visited",
-  };
+  const collection = COLLECTION_ALIASES[normalized] || normalized;
 
-  return aliases[normalized] || "all";
+  return PACKAGE_COLLECTIONS.some(
+    (item) => item.value === collection
+  )
+    ? collection
+    : "all";
 };
 
 /* ==========================================================
-   PUBLISHED CHECK
+   HELPERS
    ========================================================== */
+
+const toNumber = (value, fallback = 0) => {
+  const number = Number(value);
+
+  return Number.isFinite(number) ? number : fallback;
+};
+
+function getSafeArray(value) {
+  if (Array.isArray(value)) return value;
+  if (Array.isArray(value?.items)) return value.items;
+  if (Array.isArray(value?.data)) return value.data;
+
+  return [];
+}
 
 const isPublished = (pkg) =>
   pkg?.status === undefined ||
   pkg?.status === "published" ||
   pkg?.is_published === true;
 
-/* ==========================================================
-   IMAGE HELPERS
-   ========================================================== */
-
-const getImageUrl = (image) => {
-  if (!image) return "";
-
-  if (typeof image === "string") {
-    return image;
-  }
-
-  if (typeof image === "object") {
-    return image?.url || "";
-  }
-
-  return "";
-};
+const getImageUrl = (image) =>
+  typeof image === "string" ? image : image?.url || "";
 
 const getPackageImage = (pkg) => {
-  if (!pkg) return "";
-
-  if (Array.isArray(pkg?.images) && pkg.images.length > 0) {
-    const image = pkg.images
+  if (Array.isArray(pkg?.images)) {
+    const first = pkg.images
       .map(getImageUrl)
-      .find((url) => Boolean(url));
+      .find(Boolean);
 
-    if (image) return image;
+    if (first) return first;
   }
 
-  // Compatibility with older API structures.
-  if (pkg?.image) {
-    return getImageUrl(pkg.image);
-  }
-
-  if (pkg?.image_url) {
-    return pkg.image_url;
-  }
-
-  return "";
+  return (
+    getImageUrl(pkg?.image) ||
+    pkg?.image_url ||
+    ""
+  );
 };
-
-/* ==========================================================
-   PACKAGE TYPE LABEL
-   ========================================================== */
 
 const getPackageTypeLabel = (type) => {
   const normalized = normalizePackageType(type);
@@ -233,19 +298,239 @@ const getPackageTypeLabel = (type) => {
   );
 };
 
-/* ==========================================================
-   PRICE FORMAT
-   ========================================================== */
-
 const formatPrice = (price) => {
-  const numericPrice = Number(price);
+  const number = Number(price);
 
-  if (!Number.isFinite(numericPrice)) {
+  if (
+    price === null ||
+    price === undefined ||
+    price === ""
+  ) {
     return "Price on request";
   }
 
-  return `₹${numericPrice.toLocaleString("en-IN")}`;
+  return Number.isFinite(number)
+    ? `₹${number.toLocaleString("en-IN")}`
+    : "Price on request";
 };
+
+const formatDuration = (days, nights) => {
+  if (
+    !days ||
+    nights === undefined ||
+    nights === null
+  ) {
+    return "Flexible";
+  }
+
+  return `${days} ${
+    Number(days) === 1 ? "day" : "days"
+  } / ${nights} ${
+    Number(nights) === 1 ? "night" : "nights"
+  }`;
+};
+
+/* ==========================================================
+   FILTER + SORT
+   ========================================================== */
+
+function matchesFilters(pkg, f) {
+  const packageType = normalizePackageType(
+    pkg?.package_type || pkg?.type
+  );
+
+  if (f.searchTerm) {
+    const searchable = [
+      pkg?.title,
+      pkg?.destination,
+      pkg?.slug,
+      pkg?.description,
+      PACKAGE_TYPE_LABELS[packageType],
+    ];
+
+    const found = searchable.some((value) =>
+      String(value || "")
+        .toLowerCase()
+        .includes(f.searchTerm)
+    );
+
+    if (!found) return false;
+  }
+
+  if (
+    f.packageType &&
+    packageType !== f.packageType
+  ) {
+    return false;
+  }
+
+  if (
+    f.destination &&
+    normalizeDestination(pkg?.destination) !==
+      f.destination
+  ) {
+    return false;
+  }
+
+  if (
+    f.collectionFlag &&
+    pkg?.[f.collectionFlag] !== true
+  ) {
+    return false;
+  }
+
+  if (f.priceRange !== "all") {
+    const price = Number(pkg?.price);
+
+    if (
+      !Number.isFinite(price) ||
+      !PRICE_TESTS[f.priceRange](price)
+    ) {
+      return false;
+    }
+  }
+
+  if (f.durationRange !== "all") {
+    const days = Number(pkg?.duration_days);
+
+    if (
+      !Number.isFinite(days) ||
+      !DURATION_TESTS[f.durationRange](days)
+    ) {
+      return false;
+    }
+  }
+
+  return true;
+}
+
+const SORTERS = {
+  "price-low": (a, b) =>
+    toNumber(a?.price) - toNumber(b?.price),
+
+  "price-high": (a, b) =>
+    toNumber(b?.price) - toNumber(a?.price),
+
+  "duration-short": (a, b) =>
+    toNumber(a?.duration_days) -
+    toNumber(b?.duration_days),
+
+  "duration-long": (a, b) =>
+    toNumber(b?.duration_days) -
+    toNumber(a?.duration_days),
+
+  newest: (a, b) =>
+    toNumber(
+      new Date(a?.created_at || 0).getTime()
+    ) -
+    toNumber(
+      new Date(b?.created_at || 0).getTime()
+    ),
+
+  recommended: (a, b) => {
+    const order =
+      toNumber(
+        a?.display_order,
+        Number.MAX_SAFE_INTEGER
+      ) -
+      toNumber(
+        b?.display_order,
+        Number.MAX_SAFE_INTEGER
+      );
+
+    if (order) return order;
+
+    if (
+      Boolean(a?.is_recommended) !==
+      Boolean(b?.is_recommended)
+    ) {
+      return a?.is_recommended ? -1 : 1;
+    }
+
+    if (
+      Boolean(a?.is_featured) !==
+      Boolean(b?.is_featured)
+    ) {
+      return a?.is_featured ? -1 : 1;
+    }
+
+    return (
+      toNumber(a?.id) - toNumber(b?.id)
+    );
+  },
+};
+
+/* ==========================================================
+   PAGE TEXT + SEO
+   ========================================================== */
+
+function getPageContext({
+  destination,
+  packageType,
+  collection,
+}) {
+  const collectionItem =
+    PACKAGE_COLLECTIONS.find(
+      (item) => item.value === collection
+    ) || PACKAGE_COLLECTIONS[0];
+
+  const typeLabel = packageType
+    ? getPackageTypeLabel(packageType)
+    : "";
+
+  const typeLower = typeLabel.toLowerCase();
+
+  const collectionLower =
+    collectionItem.label.toLowerCase();
+
+  if (destination !== "all") {
+    return {
+      title: `${destination} Packages`,
+      description: `Explore all available holiday packages for ${destination} from ${BRAND_NAME}. Compare destinations, durations and prices.`,
+      seoTitle: `${destination} Holiday Packages | ${BRAND_NAME}`,
+      seoDescription: `Explore ${destination} holiday packages from ${BRAND_NAME}. Discover available travel experiences, durations and prices.`,
+      emptyMessage: `There are currently no packages available for ${destination} matching your selected filters.`,
+      typeLabel,
+      collectionLabel: collectionItem.label,
+    };
+  }
+
+  if (packageType) {
+    return {
+      title: `${typeLabel} Packages`,
+      description: `Explore ${typeLower} holiday packages from ${BRAND_NAME}. Discover curated destinations, experiences, durations and prices.`,
+      seoTitle: `${typeLabel} Holiday Packages | ${BRAND_NAME}`,
+      seoDescription: `Explore ${typeLower} holiday packages from ${BRAND_NAME}. Discover curated destinations, travel experiences, durations and prices.`,
+      emptyMessage: `There are currently no ${typeLower} packages matching your selected filters.`,
+      typeLabel,
+      collectionLabel: collectionItem.label,
+    };
+  }
+
+  if (collection !== "all") {
+    return {
+      title: `${collectionItem.label} Holiday Packages`,
+      description: collectionItem.description,
+      seoTitle: `${collectionItem.label} Holiday Packages | ${BRAND_NAME}`,
+      seoDescription: `Explore ${collectionLower} holiday packages from ${BRAND_NAME}. Discover curated destinations, travel experiences, durations and prices.`,
+      emptyMessage: `There are currently no ${collectionLower} packages matching your selected filters.`,
+      typeLabel,
+      collectionLabel: collectionItem.label,
+    };
+  }
+
+  return {
+    title: "Find the right holiday package for your journey",
+    description:
+      "Explore holiday packages by destination, package type, price and duration.",
+    seoTitle: `Holiday Packages | ${BRAND_NAME}`,
+    seoDescription: `Explore holiday packages from ${BRAND_NAME}. Discover curated travel experiences, destinations, durations and prices.`,
+    emptyMessage:
+      "Try changing your search or filters to find available packages.",
+    typeLabel,
+    collectionLabel: collectionItem.label,
+  };
+}
 
 /* ==========================================================
    PACKAGE CARD
@@ -254,114 +539,59 @@ const formatPrice = (price) => {
 function PackageCard({ pkg }) {
   const imageUrl = getPackageImage(pkg);
 
-  const packageHref = pkg?.slug
-    ? `/packages/${pkg.slug}`
-    : `/packages/${pkg?.id}`;
+  const href = `/packages/${encodeURIComponent(
+    pkg?.slug || pkg?.id
+  )}`;
 
   const typeLabel = getPackageTypeLabel(
     pkg?.package_type || pkg?.type
   );
 
   return (
-    <article
-      className="
-        group
-        overflow-hidden
-        rounded-2xl
-        border
-        border-navy/10
-        bg-white
-        shadow-sm
-        transition-all
-        duration-300
-        hover:-translate-y-1
-        hover:shadow-xl
-      "
-    >
-      <Link to={packageHref} className="block">
+    <article className="group overflow-hidden rounded-[1.5rem] border border-rose-100 bg-white shadow-[0_8px_30px_rgba(122,76,86,0.07)] transition-all duration-300 hover:-translate-y-1.5 hover:border-rose-200 hover:shadow-[0_18px_45px_rgba(122,76,86,0.12)]">
+      <Link to={href} className="block">
         {/* IMAGE */}
-        <div className="relative aspect-[16/10] overflow-hidden bg-surface">
+        <div className="relative aspect-[16/10] overflow-hidden bg-rose-50">
           {imageUrl ? (
             <img
               src={imageUrl}
-              alt={pkg?.title || "Holiday package"}
-              className="
-                h-full
-                w-full
-                object-cover
-                transition-transform
-                duration-500
-                group-hover:scale-105
-              "
+              alt={
+                pkg?.title ||
+                "Holiday package"
+              }
+              className="h-full w-full object-cover transition-transform duration-700 group-hover:scale-105"
               loading="lazy"
             />
           ) : (
-            <div
-              className="
-                flex
-                h-full
-                w-full
-                items-center
-                justify-center
-                bg-surface
-              "
-            >
-              <ImageOff className="h-8 w-8 text-navy/25" />
+            <div className="flex h-full w-full items-center justify-center bg-rose-50">
+              <ImageOff
+                className="h-8 w-8 text-rose-300"
+                aria-hidden="true"
+              />
             </div>
           )}
 
-          {/* TYPE BADGE */}
+          {/* Image bottom overlay */}
           <div
-            className="
-              absolute
-              left-3
-              top-3
-              rounded-full
-              bg-white/95
-              px-3
-              py-1.5
-              text-xs
-              font-semibold
-              text-navy
-              shadow-sm
-              backdrop-blur
-            "
-          >
-            {typeLabel}
-          </div>
+            aria-hidden="true"
+            className="pointer-events-none absolute inset-x-0 bottom-0 h-20 bg-gradient-to-t from-[#3c1f29]/25 to-transparent"
+          />
 
-          {/* DISCOVERY BADGES */}
+          {/* Package type */}
+          <span className="absolute left-3 top-3 rounded-full border border-white/60 bg-[#fffaf8]/95 px-3 py-1.5 text-xs font-semibold text-[#633b46] shadow-sm backdrop-blur-md">
+            {typeLabel}
+          </span>
+
+          {/* Badges */}
           <div className="absolute right-3 top-3 flex flex-wrap justify-end gap-2">
             {pkg?.is_new && (
-              <span
-                className="
-                  rounded-full
-                  bg-accent
-                  px-3
-                  py-1.5
-                  text-xs
-                  font-semibold
-                  text-white
-                  shadow-sm
-                "
-              >
+              <span className="rounded-full bg-[#9f5f70] px-3 py-1.5 text-xs font-semibold text-white shadow-sm">
                 New
               </span>
             )}
 
             {pkg?.is_featured && (
-              <span
-                className="
-                  rounded-full
-                  bg-navy
-                  px-3
-                  py-1.5
-                  text-xs
-                  font-semibold
-                  text-white
-                  shadow-sm
-                "
-              >
+              <span className="rounded-full bg-[#704552] px-3 py-1.5 text-xs font-semibold text-white shadow-sm">
                 Featured
               </span>
             )}
@@ -370,118 +600,59 @@ function PackageCard({ pkg }) {
 
         {/* CONTENT */}
         <div className="p-5">
-          {/* DESTINATION */}
-          <div className="flex items-center gap-1.5 text-xs font-medium text-navy/50">
-            <MapPin className="h-3.5 w-3.5" />
-            <span>{pkg?.destination || "India"}</span>
+          <div className="flex items-center gap-1.5 text-xs font-medium text-[#8b6872]">
+            <MapPin
+              className="h-3.5 w-3.5 text-primary"
+              aria-hidden="true"
+            />
+
+            <span>
+              {pkg?.destination || "India"}
+            </span>
           </div>
 
-          {/* TITLE */}
-          <h2
-            className="
-              mt-2
-              line-clamp-2
-              font-display
-              text-xl
-              font-semibold
-              leading-snug
-              text-navy
-              transition-colors
-              group-hover:text-accent
-            "
-          >
+          <h2 className="mt-2 line-clamp-2 font-display text-2xl font-semibold leading-snug text-[#3c2930] transition-colors group-hover:text-primary">
             {pkg?.title || "Holiday Package"}
           </h2>
 
-          {/* DESCRIPTION */}
           {pkg?.description && (
-            <p
-              className="
-                mt-2
-                line-clamp-2
-                text-sm
-                leading-6
-                text-navy/60
-              "
-            >
+            <p className="mt-2 line-clamp-2 text-sm leading-6 text-[#765f66]">
               {pkg.description}
             </p>
           )}
 
-          {/* PRICE / DURATION */}
-          <div
-            className="
-              mt-5
-              flex
-              items-end
-              justify-between
-              gap-4
-              border-t
-              border-navy/10
-              pt-4
-            "
-          >
+          <div className="mt-5 flex items-end justify-between gap-4 border-t border-rose-100 pt-4">
             <div>
-              <p className="text-xs text-navy/45">
+              <p className="text-xs text-[#9a7b83]">
                 Starting from
               </p>
 
-              <p className="mt-0.5 text-lg font-bold text-navy">
+              <p className="mt-0.5 text-lg font-bold text-primary">
                 {formatPrice(pkg?.price)}
               </p>
             </div>
 
-            <div
-              className="
-                inline-flex
-                items-center
-                gap-1.5
-                text-xs
-                font-medium
-                text-navy/60
-              "
-            >
-              <Clock className="h-4 w-4" />
+            <div className="inline-flex items-center gap-1.5 text-xs font-medium text-[#765f66]">
+              <Clock
+                className="h-4 w-4 text-primary"
+                aria-hidden="true"
+              />
 
               <span>
-                {pkg?.duration_days &&
-                pkg?.duration_nights !== undefined
-                  ? `${pkg.duration_days} ${
-                      Number(pkg.duration_days) === 1
-                        ? "day"
-                        : "days"
-                    } / ${pkg.duration_nights} ${
-                      Number(pkg.duration_nights) === 1
-                        ? "night"
-                        : "nights"
-                    }`
-                  : "Flexible"}
+                {formatDuration(
+                  pkg?.duration_days,
+                  pkg?.duration_nights
+                )}
               </span>
             </div>
           </div>
 
-          {/* CTA */}
-          <div
-            className="
-              mt-4
-              inline-flex
-              items-center
-              gap-2
-              text-sm
-              font-semibold
-              text-accent
-            "
-          >
+          <div className="mt-4 inline-flex items-center gap-2 text-sm font-semibold text-primary">
             View Package
 
             <ArrowRight
-              className="
-                h-4
-                w-4
-                transition-transform
-                duration-200
-                group-hover:translate-x-1
-              "
+              className="h-4 w-4 transition-transform duration-200 group-hover:translate-x-1"
+              aria-hidden="true"
             />
           </div>
         </div>
@@ -491,11 +662,44 @@ function PackageCard({ pkg }) {
 }
 
 /* ==========================================================
+   PACKAGE SKELETON
+   ========================================================== */
+
+function PackageSkeleton() {
+  return (
+    <div
+      className="overflow-hidden rounded-[1.5rem] border border-rose-100 bg-white"
+      aria-hidden="true"
+    >
+      <div className="aspect-[16/10] animate-pulse bg-rose-100/70" />
+
+      <div className="space-y-4 p-5">
+        <div className="h-3 w-24 animate-pulse rounded bg-rose-100" />
+
+        <div className="h-6 w-4/5 animate-pulse rounded bg-rose-100" />
+
+        <div className="h-4 w-full animate-pulse rounded bg-rose-100" />
+
+        <div className="h-4 w-2/3 animate-pulse rounded bg-rose-100" />
+
+        <div className="flex justify-between border-t border-rose-100 pt-4">
+          <div className="h-6 w-28 animate-pulse rounded bg-rose-100" />
+
+          <div className="h-5 w-20 animate-pulse rounded bg-rose-100" />
+        </div>
+      </div>
+    </div>
+  );
+}
+
+/* ==========================================================
    FILTER SELECT
    ========================================================== */
 
 function FilterSelect({
+  id,
   label,
+  ariaLabel,
   value,
   onChange,
   options,
@@ -504,13 +708,8 @@ function FilterSelect({
     <div>
       {label && (
         <label
-          className="
-            mb-2
-            block
-            text-xs
-            font-semibold
-            text-navy/60
-          "
+          htmlFor={id}
+          className="mb-2 block text-xs font-semibold text-[#765f66]"
         >
           {label}
         </label>
@@ -518,28 +717,15 @@ function FilterSelect({
 
       <div className="relative">
         <select
+          id={id}
+          aria-label={
+            label ? undefined : ariaLabel
+          }
           value={value}
           onChange={(event) =>
             onChange(event.target.value)
           }
-          className="
-            w-full
-            appearance-none
-            rounded-xl
-            border
-            border-navy/15
-            bg-white
-            px-4
-            py-3
-            pr-10
-            text-sm
-            text-navy
-            outline-none
-            transition-colors
-            focus:border-accent
-            focus:ring-2
-            focus:ring-accent/10
-          "
+          className={`${INPUT} appearance-none pr-10`}
         >
           {options.map((option) => (
             <option
@@ -552,16 +738,7 @@ function FilterSelect({
         </select>
 
         <ChevronDown
-          className="
-            pointer-events-none
-            absolute
-            right-3
-            top-1/2
-            h-4
-            w-4
-            -translate-y-1/2
-            text-navy/45
-          "
+          className="pointer-events-none absolute right-3 top-1/2 h-4 w-4 -translate-y-1/2 text-primary"
           aria-hidden="true"
         />
       </div>
@@ -570,36 +747,95 @@ function FilterSelect({
 }
 
 /* ==========================================================
-   PACKAGE SKELETON
+   FILTERS
    ========================================================== */
 
-function PackageSkeleton() {
+function Filters({
+  idPrefix,
+  search,
+  onSearch,
+  destination,
+  onDestination,
+  destinationOptions,
+  priceRange,
+  onPrice,
+  durationRange,
+  onDuration,
+  showReset,
+  onReset,
+}) {
   return (
-    <div
-      className="
-        overflow-hidden
-        rounded-2xl
-        border
-        border-navy/10
-        bg-white
-      "
-    >
-      <div className="aspect-[16/10] animate-pulse bg-navy/5" />
+    <div className="space-y-5">
+      {/* SEARCH */}
+      <div>
+        <label
+          htmlFor={`${idPrefix}-search`}
+          className="mb-2 block text-xs font-semibold text-[#765f66]"
+        >
+          Search
+        </label>
 
-      <div className="space-y-4 p-5">
-        <div className="h-3 w-24 animate-pulse rounded bg-navy/10" />
+        <div className="relative">
+          <Search
+            className="absolute left-3.5 top-1/2 h-4 w-4 -translate-y-1/2 text-[#a47b85]"
+            aria-hidden="true"
+          />
 
-        <div className="h-6 w-4/5 animate-pulse rounded bg-navy/10" />
-
-        <div className="h-4 w-full animate-pulse rounded bg-navy/10" />
-
-        <div className="h-4 w-2/3 animate-pulse rounded bg-navy/10" />
-
-        <div className="flex justify-between border-t border-navy/10 pt-4">
-          <div className="h-6 w-28 animate-pulse rounded bg-navy/10" />
-          <div className="h-5 w-20 animate-pulse rounded bg-navy/10" />
+          <input
+            id={`${idPrefix}-search`}
+            type="search"
+            value={search}
+            onChange={(event) =>
+              onSearch(event.target.value)
+            }
+            placeholder="Search packages..."
+            className={`${INPUT} px-10`}
+          />
         </div>
       </div>
+
+      {/* DESTINATION */}
+      <FilterSelect
+        id={`${idPrefix}-destination`}
+        label="Destination"
+        value={destination}
+        onChange={onDestination}
+        options={destinationOptions}
+      />
+
+      {/* PRICE */}
+      <FilterSelect
+        id={`${idPrefix}-price`}
+        label="Price"
+        value={priceRange}
+        onChange={onPrice}
+        options={PRICE_OPTIONS}
+      />
+
+      {/* DURATION */}
+      <FilterSelect
+        id={`${idPrefix}-duration`}
+        label="Duration"
+        value={durationRange}
+        onChange={onDuration}
+        options={DURATION_OPTIONS}
+      />
+
+      {/* RESET */}
+      {showReset && (
+        <button
+          type="button"
+          onClick={onReset}
+          className="inline-flex w-full items-center justify-center gap-2 rounded-xl border border-rose-200 bg-white px-4 py-3 text-sm font-semibold text-[#633b46] transition-all hover:border-primary hover:bg-[#fff5f6] hover:text-primary"
+        >
+          <X
+            className="h-4 w-4"
+            aria-hidden="true"
+          />
+
+          Clear Filters
+        </button>
+      )}
     </div>
   );
 }
@@ -612,49 +848,45 @@ export default function PackagesPage() {
   const [searchParams, setSearchParams] =
     useSearchParams();
 
-  /* ========================================================
-     URL STATE
-     ======================================================== */
+  /*
+   * URL is the single source of truth for
+   * collection, type and destination.
+   */
 
-  const urlCollection = normalizeCollection(
-    searchParams.get("collection") || "all"
+  const collection = normalizeCollection(
+    searchParams.get("collection")
   );
 
-  const urlPackageType = normalizePackageType(
-    searchParams.get("type") || ""
+  const packageType = normalizePackageType(
+    searchParams.get("type")
   );
 
-  const urlDestination = String(
+  const urlDestination = (
     searchParams.get("destination") || ""
   ).trim();
 
-  /* ========================================================
-     DATA STATE
-     ======================================================== */
+  /*
+   * Cached data:
+   * instant on repeat visits,
+   * updates itself when fresh.
+   */
 
-  const [packages, setPackages] = useState([]);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState("");
+  const {
+    data,
+    loading,
+    error,
+  } = useQuery(getPackages);
 
-  /* ========================================================
-     FILTER STATE
-     ======================================================== */
+  const packages = useMemo(
+    () =>
+      getSafeArray(data).filter(isPublished),
+    [data]
+  );
 
   const [search, setSearch] = useState("");
 
-  const [destination, setDestination] = useState(
-    urlDestination || "all"
-  );
-
-  const [packageType, setPackageType] = useState(
-    urlPackageType || ""
-  );
-
-  const [collection, setCollection] = useState(
-    urlCollection || "all"
-  );
-
-  const [priceRange, setPriceRange] = useState("all");
+  const [priceRange, setPriceRange] =
+    useState("all");
 
   const [durationRange, setDurationRange] =
     useState("all");
@@ -662,910 +894,339 @@ export default function PackagesPage() {
   const [sortBy, setSortBy] =
     useState("recommended");
 
-  const [mobileFiltersOpen, setMobileFiltersOpen] =
-    useState(false);
+  const [
+    mobileFiltersOpen,
+    setMobileFiltersOpen,
+  ] = useState(false);
 
-  /* ==========================================================
-     SYNC URL → LOCAL STATE
-     ========================================================== */
-
-  useEffect(() => {
-    setCollection(urlCollection || "all");
-
-    setPackageType(urlPackageType || "");
-
-    setDestination(urlDestination || "all");
-  }, [
-    urlCollection,
-    urlPackageType,
-    urlDestination,
-  ]);
-
-  /* ==========================================================
-     FETCH PACKAGES
-     ========================================================== */
-
-  useEffect(() => {
-    let cancelled = false;
-
-    const loadPackages = async () => {
-      try {
-        setLoading(true);
-        setError("");
-
-        const response = await getPackages();
-
-        const data = Array.isArray(response)
-          ? response
-          : Array.isArray(response?.items)
-            ? response.items
-            : Array.isArray(response?.data)
-              ? response.data
-              : [];
-
-        if (!cancelled) {
-          setPackages(data.filter(isPublished));
-        }
-      } catch (err) {
-        console.error(
-          "Failed to load packages:",
-          err
-        );
-
-        if (!cancelled) {
-          setError(
-            err?.response?.data?.detail ||
-              err?.message ||
-              "Unable to load packages right now."
-          );
-        }
-      } finally {
-        if (!cancelled) {
-          setLoading(false);
-        }
-      }
-    };
-
-    loadPackages();
-
-    return () => {
-      cancelled = true;
-    };
-  }, []);
-
-  /* ==========================================================
+  /* ========================================================
      DESTINATION OPTIONS
-     ========================================================== */
+     ======================================================== */
 
   const destinationOptions = useMemo(() => {
-    const destinationMap = new Map();
+    const unique = new Map();
 
     packages.forEach((pkg) => {
-      const original = String(
+      const name = String(
         pkg?.destination || ""
       ).trim();
 
-      if (!original) return;
+      const key = normalizeDestination(name);
 
-      const normalized =
-        normalizeDestination(original);
-
-      if (!destinationMap.has(normalized)) {
-        destinationMap.set(normalized, original);
+      if (name && !unique.has(key)) {
+        unique.set(key, name);
       }
     });
-
-    const destinations = Array.from(
-      destinationMap.values()
-    ).sort((a, b) =>
-      a.localeCompare(b)
-    );
 
     return [
       {
         value: "all",
         label: "All destinations",
       },
-      ...destinations.map((item) => ({
-        value: item,
-        label: item,
-      })),
+
+      ...[...unique.values()]
+        .sort((a, b) =>
+          a.localeCompare(b)
+        )
+        .map((name) => ({
+          value: name,
+          label: name,
+        })),
     ];
   }, [packages]);
 
-  /* ==========================================================
-     SELECTED COLLECTION
-     ========================================================== */
+  /* ========================================================
+     DESTINATION FROM URL
+     ======================================================== */
 
-  const selectedCollection =
-    PACKAGE_COLLECTIONS.find(
-      (item) => item.value === collection
-    ) || PACKAGE_COLLECTIONS[0];
-
-  const selectedCollectionLabel =
-    selectedCollection?.label || "All Packages";
-
-  /* ==========================================================
-     SELECTED PACKAGE TYPE
-     ========================================================== */
-
-  const selectedPackageTypeLabel =
-    PACKAGE_TYPE_LABELS[packageType] || "";
-
-  /* ==========================================================
-     COLLECTION MATCH
-     ========================================================== */
-
-  const matchesCollection = (pkg) => {
-    if (collection === "all") {
-      return true;
+  const destination = useMemo(() => {
+    if (
+      !urlDestination ||
+      urlDestination.toLowerCase() === "all"
+    ) {
+      return "all";
     }
 
-    const flag =
-      COLLECTION_FLAG_MAP[collection];
+    const match = destinationOptions.find(
+      (option) =>
+        option.value !== "all" &&
+        normalizeDestination(option.value) ===
+          normalizeDestination(urlDestination)
+    );
 
-    if (!flag) {
-      return true;
-    }
+    return match
+      ? match.value
+      : urlDestination;
+  }, [
+    urlDestination,
+    destinationOptions,
+  ]);
 
-    return pkg?.[flag] === true;
-  };
-
-  /* ==========================================================
-     FILTER + SORT
-     ========================================================== */
+  /* ========================================================
+     FILTERED PACKAGES
+     ======================================================== */
 
   const filteredPackages = useMemo(() => {
-    const searchTerm = search
-      .trim()
-      .toLowerCase();
+    const filters = {
+      searchTerm: search
+        .trim()
+        .toLowerCase(),
 
-    const selectedDestination =
-      normalizeDestination(destination);
+      packageType,
 
-    const selectedType =
-      normalizePackageType(packageType);
+      destination:
+        destination === "all"
+          ? ""
+          : normalizeDestination(
+              destination
+            ),
 
-    const filtered = packages.filter((pkg) => {
-      /* -----------------------------------------------------
-         SEARCH
-         ----------------------------------------------------- */
+      collectionFlag:
+        COLLECTION_FLAG_MAP[collection] || "",
 
-      if (searchTerm) {
-        const title = String(
-          pkg?.title || ""
-        ).toLowerCase();
+      priceRange,
 
-        const destinationName = String(
-          pkg?.destination || ""
-        ).toLowerCase();
+      durationRange,
+    };
 
-        const slug = String(
-          pkg?.slug || ""
-        ).toLowerCase();
-
-        const description = String(
-          pkg?.description || ""
-        ).toLowerCase();
-
-        const packageTypeValue =
-          normalizePackageType(
-            pkg?.package_type ||
-              pkg?.type ||
-              ""
-          );
-
-        const packageTypeLabel =
-          String(
-            PACKAGE_TYPE_LABELS[
-              packageTypeValue
-            ] || ""
-          ).toLowerCase();
-
-        const matchesSearch =
-          title.includes(searchTerm) ||
-          destinationName.includes(searchTerm) ||
-          slug.includes(searchTerm) ||
-          description.includes(searchTerm) ||
-          packageTypeLabel.includes(searchTerm);
-
-        if (!matchesSearch) {
-          return false;
-        }
-      }
-
-      /* -----------------------------------------------------
-         PACKAGE TYPE
-         ----------------------------------------------------- */
-
-      if (selectedType) {
-        const packageTypeValue =
-          normalizePackageType(
-            pkg?.package_type ||
-              pkg?.type ||
-              ""
-          );
-
-        if (
-          packageTypeValue !== selectedType
-        ) {
-          return false;
-        }
-      }
-
-      /* -----------------------------------------------------
-         DESTINATION
-         ----------------------------------------------------- */
-
-      if (
-        destination !== "all" &&
-        selectedDestination
-      ) {
-        const packageDestination =
-          normalizeDestination(
-            pkg?.destination
-          );
-
-        if (
-          packageDestination !==
-          selectedDestination
-        ) {
-          return false;
-        }
-      }
-
-      /* -----------------------------------------------------
-         COLLECTION
-         ----------------------------------------------------- */
-
-      if (!matchesCollection(pkg)) {
-        return false;
-      }
-
-      /* -----------------------------------------------------
-         PRICE
-         ----------------------------------------------------- */
-
-      const price = Number(pkg?.price);
-
-      if (priceRange === "under-25000") {
-        if (
-          !Number.isFinite(price) ||
-          price >= 25000
-        ) {
-          return false;
-        }
-      }
-
-      if (priceRange === "25000-50000") {
-        if (
-          !Number.isFinite(price) ||
-          price < 25000 ||
-          price > 50000
-        ) {
-          return false;
-        }
-      }
-
-      if (priceRange === "50000-100000") {
-        if (
-          !Number.isFinite(price) ||
-          price < 50000 ||
-          price > 100000
-        ) {
-          return false;
-        }
-      }
-
-      if (priceRange === "100000-plus") {
-        if (
-          !Number.isFinite(price) ||
-          price <= 100000
-        ) {
-          return false;
-        }
-      }
-
-      /* -----------------------------------------------------
-         DURATION
-         ----------------------------------------------------- */
-
-      const duration = Number(
-        pkg?.duration_days
+    return packages
+      .filter((pkg) =>
+        matchesFilters(pkg, filters)
+      )
+      .sort(
+        SORTERS[sortBy] ||
+          SORTERS.recommended
       );
-
-      if (durationRange === "1-3") {
-        if (
-          !Number.isFinite(duration) ||
-          duration < 1 ||
-          duration > 3
-        ) {
-          return false;
-        }
-      }
-
-      if (durationRange === "4-7") {
-        if (
-          !Number.isFinite(duration) ||
-          duration < 4 ||
-          duration > 7
-        ) {
-          return false;
-        }
-      }
-
-      if (durationRange === "8-14") {
-        if (
-          !Number.isFinite(duration) ||
-          duration < 8 ||
-          duration > 14
-        ) {
-          return false;
-        }
-      }
-
-      if (durationRange === "15-plus") {
-        if (
-          !Number.isFinite(duration) ||
-          duration < 15
-        ) {
-          return false;
-        }
-      }
-
-      return true;
-    });
-
-    /* ======================================================
-       SORT
-       ====================================================== */
-
-    return [...filtered].sort((a, b) => {
-      if (sortBy === "price-low") {
-        return (
-          Number(a?.price || 0) -
-          Number(b?.price || 0)
-        );
-      }
-
-      if (sortBy === "price-high") {
-        return (
-          Number(b?.price || 0) -
-          Number(a?.price || 0)
-        );
-      }
-
-      if (sortBy === "duration-short") {
-        return (
-          Number(a?.duration_days || 0) -
-          Number(b?.duration_days || 0)
-        );
-      }
-
-      if (sortBy === "duration-long") {
-        return (
-          Number(b?.duration_days || 0) -
-          Number(a?.duration_days || 0)
-        );
-      }
-
-      if (sortBy === "newest") {
-        const dateA = new Date(
-          a?.created_at || 0
-        ).getTime();
-
-        const dateB = new Date(
-          b?.created_at || 0
-        ).getTime();
-
-        return dateB - dateA;
-      }
-
-      /* -----------------------------------------------------
-         RECOMMENDED
-         display_order
-         → recommended
-         → featured
-         → id
-         ----------------------------------------------------- */
-
-      const displayOrderA =
-        Number.isFinite(
-          Number(a?.display_order)
-        )
-          ? Number(a?.display_order)
-          : Number.MAX_SAFE_INTEGER;
-
-      const displayOrderB =
-        Number.isFinite(
-          Number(b?.display_order)
-        )
-          ? Number(b?.display_order)
-          : Number.MAX_SAFE_INTEGER;
-
-      if (
-        displayOrderA !== displayOrderB
-      ) {
-        return (
-          displayOrderA -
-          displayOrderB
-        );
-      }
-
-      if (
-        a?.is_recommended !==
-        b?.is_recommended
-      ) {
-        return a?.is_recommended
-          ? -1
-          : 1;
-      }
-
-      if (
-        a?.is_featured !==
-        b?.is_featured
-      ) {
-        return a?.is_featured
-          ? -1
-          : 1;
-      }
-
-      return (
-        Number(a?.id || 0) -
-        Number(b?.id || 0)
-      );
-    });
   }, [
     packages,
     search,
-    destination,
     packageType,
+    destination,
     collection,
     priceRange,
     durationRange,
     sortBy,
   ]);
 
-  /* ==========================================================
-     DESTINATION CHANGE
-     Keep destination in URL.
-     ========================================================== */
+  /* ========================================================
+     PAGE CONTEXT
+     ======================================================== */
 
-  const handleDestinationChange = (
-    nextDestination
-  ) => {
-    setDestination(nextDestination);
+  const context = getPageContext({
+    destination,
+    packageType,
+    collection,
+  });
 
-    const params = new URLSearchParams(
-      searchParams
+  const activeFilterCount = [
+    search.trim(),
+    destination !== "all",
+    packageType,
+    priceRange !== "all",
+    durationRange !== "all",
+  ].filter(Boolean).length;
+
+  const hasActiveFilters =
+    activeFilterCount > 0;
+
+  /* ========================================================
+     URL UPDATES
+     ======================================================== */
+
+  const updateParams = (changes) => {
+    const params =
+      new URLSearchParams(searchParams);
+
+    Object.entries(changes).forEach(
+      ([key, value]) => {
+        if (
+          !value ||
+          value === "all"
+        ) {
+          params.delete(key);
+        } else {
+          params.set(key, value);
+        }
+      }
     );
-
-    if (
-      !nextDestination ||
-      nextDestination === "all"
-    ) {
-      params.delete("destination");
-    } else {
-      params.set(
-        "destination",
-        nextDestination
-      );
-    }
 
     setSearchParams(params, {
       replace: true,
     });
   };
-
-  /* ==========================================================
-     COLLECTION CHANGE
-     Preserve destination/type while changing collection.
-     ========================================================== */
 
   const handleCollectionChange = (
-    nextCollection
-  ) => {
-    const normalized =
-      normalizeCollection(
-        nextCollection
-      );
-
-    const params = new URLSearchParams(
-      searchParams
-    );
-
-    if (
-      normalized &&
-      normalized !== "all"
-    ) {
-      params.set(
-        "collection",
-        normalized
-      );
-    } else {
-      params.delete("collection");
-    }
-
-    setSearchParams(params, {
-      replace: true,
+    value
+  ) =>
+    updateParams({
+      collection:
+        normalizeCollection(value),
     });
-  };
 
-  /* ==========================================================
-     RESET REFINEMENT FILTERS
-     Clear search/filter URL state as well.
-     ========================================================== */
+  const handleDestinationChange = (
+    value
+  ) =>
+    updateParams({
+      destination: value,
+    });
+
+  /* ========================================================
+     RESET FILTERS
+     ======================================================== */
 
   const resetFilters = () => {
     setSearch("");
-
-    setDestination("all");
-
-    setPackageType("");
-
     setPriceRange("all");
-
     setDurationRange("all");
-
     setSortBy("recommended");
 
-    setSearchParams(
-      {},
-      {
-        replace: true,
-      }
-    );
+    updateParams({
+      destination: "",
+      type: "",
+    });
   };
 
-  /* ==========================================================
-     ACTIVE FILTERS
-     ========================================================== */
+  /* ========================================================
+     MOBILE FILTER DRAWER
+     ======================================================== */
 
-  const hasActiveFilters =
-    search.trim() !== "" ||
-    destination !== "all" ||
-    packageType !== "" ||
-    priceRange !== "all" ||
-    durationRange !== "all";
+  useEffect(() => {
+    if (!mobileFiltersOpen) {
+      return undefined;
+    }
 
-  /* ==========================================================
-     PAGE CONTEXT
-     ========================================================== */
+    const onKeyDown = (event) => {
+      if (event.key === "Escape") {
+        setMobileFiltersOpen(false);
+      }
+    };
 
-  const pageContextLabel =
-    destination !== "all"
-      ? `${destination} Packages`
-      : packageType
-        ? `${selectedPackageTypeLabel} Packages`
-        : collection !== "all"
-          ? `${selectedCollectionLabel} Holiday Packages`
-          : "Find the right holiday package for your journey";
+    const previousOverflow =
+      document.body.style.overflow;
 
-  const pageContextDescription =
-    destination !== "all"
-      ? `Explore all available holiday packages for ${destination} from On a Trip Holidays. Compare destinations, durations and prices.`
-      : packageType
-        ? `Explore ${selectedPackageTypeLabel.toLowerCase()} holiday packages from On a Trip Holidays. Discover curated destinations, experiences, durations and prices.`
-        : collection !== "all"
-          ? selectedCollection?.description
-          : "Explore holiday packages by destination, package type, price and duration.";
+    document.body.style.overflow =
+      "hidden";
 
-  /* ==========================================================
-     SEO
-     ========================================================== */
+    document.addEventListener(
+      "keydown",
+      onKeyDown
+    );
 
-  let seoTitle =
-    "Holiday Packages | On a Trip Holidays";
+    return () => {
+      document.body.style.overflow =
+        previousOverflow;
 
-  let seoDescription =
-    "Explore holiday packages from On a Trip Holidays. Discover curated travel experiences, destinations, durations and prices.";
+      document.removeEventListener(
+        "keydown",
+        onKeyDown
+      );
+    };
+  }, [mobileFiltersOpen]);
 
-  if (destination !== "all") {
-    seoTitle = `${destination} Holiday Packages | On a Trip Holidays`;
+  /* ========================================================
+     FILTER PROPS
+     ======================================================== */
 
-    seoDescription = `Explore ${destination} holiday packages from On a Trip Holidays. Discover available travel experiences, durations and prices.`;
-  } else if (packageType) {
-    seoTitle = `${selectedPackageTypeLabel} Holiday Packages | On a Trip Holidays`;
+  const filterProps = {
+    search,
+    onSearch: setSearch,
 
-    seoDescription = `Explore ${selectedPackageTypeLabel.toLowerCase()} holiday packages from On a Trip Holidays. Discover curated destinations, travel experiences, durations and prices.`;
-  } else if (collection !== "all") {
-    seoTitle = `${selectedCollectionLabel} Holiday Packages | On a Trip Holidays`;
+    destination,
+    onDestination:
+      handleDestinationChange,
 
-    seoDescription = `Explore ${selectedCollectionLabel.toLowerCase()} holiday packages from On a Trip Holidays. Discover curated destinations, travel experiences, durations and prices.`;
-  }
+    destinationOptions,
 
-  /* ==========================================================
-     CANONICAL
-     Query parameters are filtering states and should
-     not create separate canonical URLs.
-     ========================================================== */
+    priceRange,
+    onPrice: setPriceRange,
 
-  const siteUrl =
-    import.meta.env.VITE_SITE_URL ||
-    "https://onatripholidays.com";
+    durationRange,
+    onDuration: setDurationRange,
 
-  const canonicalUrl = `${siteUrl}/packages`;
+    showReset: hasActiveFilters,
+    onReset: resetFilters,
+  };
 
-  /* ==========================================================
-     FILTER CONTENT
-     Shared by desktop sidebar and mobile drawer.
-     ========================================================== */
+  const resultLabel =
+    filteredPackages.length === 1
+      ? "package"
+      : "packages";
 
-  const filters = (
-    <div className="space-y-5">
-      {/* SEARCH */}
-      <div>
-        <label
-          htmlFor="package-search"
-          className="
-            mb-2
-            block
-            text-xs
-            font-semibold
-            text-navy/60
-          "
-        >
-          Search
-        </label>
-
-        <div className="relative">
-          <Search
-            className="
-              absolute
-              left-3.5
-              top-1/2
-              h-4
-              w-4
-              -translate-y-1/2
-              text-navy/40
-            "
-            aria-hidden="true"
-          />
-
-          <input
-            id="package-search"
-            type="search"
-            value={search}
-            onChange={(event) =>
-              setSearch(
-                event.target.value
-              )
-            }
-            placeholder="Search packages..."
-            className="
-              w-full
-              rounded-xl
-              border
-              border-navy/15
-              bg-white
-              px-10
-              py-3
-              text-sm
-              text-navy
-              outline-none
-              focus:border-accent
-              focus:ring-2
-              focus:ring-accent/10
-            "
-          />
-        </div>
-      </div>
-
-      {/* DESTINATION */}
-      <FilterSelect
-        label="Destination"
-        value={destination}
-        onChange={handleDestinationChange}
-        options={destinationOptions}
-      />
-
-      {/* PRICE */}
-      <FilterSelect
-        label="Price"
-        value={priceRange}
-        onChange={setPriceRange}
-        options={[
-          {
-            value: "all",
-            label: "Any price",
-          },
-          {
-            value: "under-25000",
-            label: "Under ₹25,000",
-          },
-          {
-            value: "25000-50000",
-            label: "₹25,000 – ₹50,000",
-          },
-          {
-            value: "50000-100000",
-            label: "₹50,000 – ₹1,00,000",
-          },
-          {
-            value: "100000-plus",
-            label: "Above ₹1,00,000",
-          },
-        ]}
-      />
-
-      {/* DURATION */}
-      <FilterSelect
-        label="Duration"
-        value={durationRange}
-        onChange={setDurationRange}
-        options={[
-          {
-            value: "all",
-            label: "Any duration",
-          },
-          {
-            value: "1-3",
-            label: "1 – 3 days",
-          },
-          {
-            value: "4-7",
-            label: "4 – 7 days",
-          },
-          {
-            value: "8-14",
-            label: "8 – 14 days",
-          },
-          {
-            value: "15-plus",
-            label: "15+ days",
-          },
-        ]}
-      />
-
-      {/* RESET */}
-      {hasActiveFilters && (
-        <button
-          type="button"
-          onClick={resetFilters}
-          className="
-            inline-flex
-            w-full
-            items-center
-            justify-center
-            gap-2
-            rounded-xl
-            border
-            border-navy/15
-            px-4
-            py-3
-            text-sm
-            font-semibold
-            text-navy
-            transition-colors
-            hover:bg-surface
-          "
-        >
-          <X className="h-4 w-4" />
-          Clear Filters
-        </button>
-      )}
-    </div>
-  );
-
-  /* ==========================================================
-     PAGE
-     ========================================================== */
+  /* ========================================================
+     RENDER
+     ======================================================== */
 
   return (
     <>
-      {/* SEO */}
+      {/* ====================================================
+          SEO
+          ==================================================== */}
+
       <Seo
-        title={seoTitle}
-        description={seoDescription}
-        canonical={canonicalUrl}
+        title={context.seoTitle}
+        description={context.seoDescription}
+        canonical={`${SITE_URL}/packages`}
       />
 
-      <main className="min-h-screen bg-white">
-        {/* ====================================================
+      <main className="min-h-screen bg-[#fffaf9]">
+        {/* ==================================================
             HERO
-            ==================================================== */}
+            ================================================== */}
 
-        <section className="border-b border-navy/10 bg-surface">
+        <section className="relative overflow-hidden border-b border-rose-100 bg-gradient-to-br from-[#fff9f7] via-[#fdf1f3] to-[#f8e8ec]">
+          {/* Decorative glow */}
           <div
-            className="
-              mx-auto
-              max-w-7xl
-              px-4
-              py-6
-              sm:px-6
-              sm:py-8
-              lg:px-8
-              lg:py-10
-            "
-          >
-            <div className="max-w-4xl">
-              <p
-                className="
-                  text-xs
-                  font-semibold
-                  uppercase
-                  tracking-wide
-                  text-accent
-                "
-              >
-                Explore with On a Trip
-              </p>
+            aria-hidden="true"
+            className="pointer-events-none absolute -right-24 -top-28 h-72 w-72 rounded-full bg-[#b56f7f]/10 blur-3xl"
+          />
 
-              <h1
-                className="
-                  mt-1
-                  font-display
-                  text-2xl
-                  font-semibold
-                  leading-tight
-                  text-navy
-                  sm:text-3xl
-                  lg:text-4xl
-                "
-              >
-                {pageContextLabel}
+          <div
+            aria-hidden="true"
+            className="pointer-events-none absolute -bottom-32 left-1/4 h-64 w-64 rounded-full bg-[#d9a8b3]/15 blur-3xl"
+          />
+
+          <div className="relative mx-auto max-w-7xl px-4 py-10 sm:px-6 sm:py-12 lg:px-8 lg:py-16">
+            <div className="max-w-4xl">
+              <div className="inline-flex items-center rounded-full border border-rose-200 bg-white/65 px-3.5 py-1.5 backdrop-blur-sm">
+                <span className="text-[10px] font-semibold uppercase tracking-[0.18em] text-[#8f5666] sm:text-xs">
+                  Explore with {BRAND_NAME}
+                </span>
+              </div>
+
+              <h1 className="mt-4 font-display text-4xl font-semibold leading-tight text-[#3c2930] sm:text-5xl lg:text-[3.5rem]">
+                {context.title}
               </h1>
 
-              <p
-                className="
-                  mt-2
-                  max-w-2xl
-                  text-sm
-                  leading-6
-                  text-navy/60
-                "
-              >
-                {pageContextDescription}
+              <p className="mt-4 max-w-2xl text-sm leading-7 text-[#765f66] sm:text-base">
+                {context.description}
               </p>
+
+              <div className="mt-6 h-px w-20 bg-[#b56f7f]/40" />
             </div>
           </div>
         </section>
 
-        {/* ====================================================
-            MAIN CONTENT
-            ==================================================== */}
+        {/* ==================================================
+            CONTENT
+            ================================================== */}
 
-        <section
-          className="
-            mx-auto
-            max-w-7xl
-            px-4
-            py-6
-            sm:px-6
-            sm:py-8
-            lg:px-8
-            lg:py-10
-          "
-        >
+        <section className="mx-auto max-w-7xl px-4 py-7 sm:px-6 sm:py-9 lg:px-8 lg:py-11">
           {/* ==================================================
-              PACKAGE COLLECTION NAVIGATION
+              COLLECTION TABS
               ================================================== */}
 
           <div className="mb-8 sm:mb-10">
             <div className="mb-4">
-              <h2
-                className="
-                  font-display
-                  text-xs
-                  font-semibold
-                  text-accent
-                  sm:text-sm
-                "
-              >
+              <p className="text-[10px] font-semibold uppercase tracking-[0.18em] text-[#a06473]">
+                Discover your next escape
+              </p>
+
+              <h2 className="mt-1 font-display text-xl font-semibold text-[#3c2930]">
                 Explore our packages
               </h2>
             </div>
 
-            {/* COLLECTION TABS */}
-            <div
-              className="
-                flex
-                gap-2
-                overflow-x-auto
-                pb-2
-                scrollbar-hide
-              "
-            >
+            <div className="flex gap-2 overflow-x-auto pb-2 scrollbar-hide">
               {PACKAGE_COLLECTIONS.map(
                 (item) => {
                   const active =
@@ -1582,25 +1243,11 @@ export default function PackagesPage() {
                         )
                       }
                       aria-pressed={active}
-                      className={`
-                        inline-flex
-                        shrink-0
-                        items-center
-                        justify-center
-                        rounded-full
-                        border
-                        px-4
-                        py-2.5
-                        text-sm
-                        font-semibold
-                        transition-all
-                        duration-200
-                        ${
-                          active
-                            ? "border-navy bg-navy text-white shadow-sm"
-                            : "border-navy/15 bg-white text-navy hover:border-accent hover:text-accent"
-                        }
-                      `}
+                      className={`inline-flex shrink-0 items-center justify-center rounded-full border px-4 py-2.5 text-sm font-semibold transition-all duration-200 ${
+                        active
+                          ? "border-[#8f5666] bg-[#8f5666] text-white shadow-[0_5px_18px_rgba(143,86,102,0.20)]"
+                          : "border-rose-100 bg-white text-[#765f66] shadow-sm hover:border-[#c995a3] hover:bg-[#fff8f8] hover:text-[#8f5666]"
+                      }`}
                     >
                       {item.label}
                     </button>
@@ -1617,45 +1264,21 @@ export default function PackagesPage() {
           {(destination !== "all" ||
             packageType) && (
             <div className="mb-6 flex flex-wrap gap-2">
-              {destination !== "all" && (
-                <span
-                  className="
-                    inline-flex
-                    items-center
-                    gap-1.5
-                    rounded-full
-                    border
-                    border-navy/10
-                    bg-surface
-                    px-3
-                    py-1.5
-                    text-xs
-                    font-semibold
-                    text-navy
-                  "
-                >
-                  <MapPin className="h-3.5 w-3.5 text-accent" />
+              {destination !==
+                "all" && (
+                <span className="inline-flex items-center gap-1.5 rounded-full border border-[#e8cbd1] bg-[#fff4f5] px-3 py-1.5 text-xs font-semibold text-[#8f5666]">
+                  <MapPin
+                    className="h-3.5 w-3.5"
+                    aria-hidden="true"
+                  />
+
                   {destination}
                 </span>
               )}
 
               {packageType && (
-                <span
-                  className="
-                    inline-flex
-                    items-center
-                    rounded-full
-                    border
-                    border-navy/10
-                    bg-surface
-                    px-3
-                    py-1.5
-                    text-xs
-                    font-semibold
-                    text-navy
-                  "
-                >
-                  {selectedPackageTypeLabel}
+                <span className="inline-flex items-center rounded-full border border-[#e8cbd1] bg-[#fff4f5] px-3 py-1.5 text-xs font-semibold text-[#8f5666]">
+                  {context.typeLabel}
                 </span>
               )}
             </div>
@@ -1669,352 +1292,188 @@ export default function PackagesPage() {
             <button
               type="button"
               onClick={() =>
-                setMobileFiltersOpen(true)
+                setMobileFiltersOpen(
+                  true
+                )
               }
-              className="
-                inline-flex
-                w-full
-                items-center
-                justify-center
-                gap-2
-                rounded-xl
-                border
-                border-navy/15
-                bg-white
-                px-5
-                py-3.5
-                font-semibold
-                text-navy
-                shadow-sm
-              "
+              className="inline-flex w-full items-center justify-center gap-2 rounded-xl border border-rose-200 bg-white px-5 py-3.5 font-semibold text-[#5d414a] shadow-sm transition-all hover:border-[#b56f7f] hover:bg-[#fff7f8]"
             >
-              <SlidersHorizontal className="h-4 w-4" />
+              <SlidersHorizontal
+                className="h-4 w-4"
+                aria-hidden="true"
+              />
 
               Filters
 
               {hasActiveFilters && (
-                <span
-                  className="
-                    inline-flex
-                    h-5
-                    min-w-5
-                    items-center
-                    justify-center
-                    rounded-full
-                    bg-accent
-                    px-1.5
-                    text-xs
-                    text-white
-                  "
-                >
-                  !
+                <span className="inline-flex h-5 min-w-5 items-center justify-center rounded-full bg-[#8f5666] px-1.5 text-xs text-white">
+                  {activeFilterCount}
                 </span>
               )}
             </button>
           </div>
 
           {/* ==================================================
-              DESKTOP GRID
+              MAIN GRID
               ================================================== */}
 
-          <div
-            className="
-              grid
-              grid-cols-1
-              items-start
-              gap-8
-              lg:grid-cols-[260px_minmax(0,1fr)]
-              lg:gap-10
-            "
-          >
-            {/* =================================================
+          <div className="grid grid-cols-1 items-start gap-8 lg:grid-cols-[260px_minmax(0,1fr)] lg:gap-10">
+            {/* ==================================================
                 DESKTOP SIDEBAR
-                ================================================= */}
+                ================================================== */}
 
-            <aside
-              className="
-                sticky
-                top-24
-                hidden
-                lg:block
-              "
-            >
-              <div
-                className="
-                  rounded-2xl
-                  border
-                  border-navy/10
-                  bg-surface
-                  p-5
-                "
-              >
-                <div
-                  className="
-                    mb-5
-                    flex
-                    items-center
-                    gap-2
-                  "
-                >
-                  <Filter className="h-4 w-4 text-accent" />
+            <aside className="sticky top-[calc(var(--top-info-height,0px)+6rem)] hidden lg:block">
+              <div className="rounded-[1.5rem] border border-rose-100 bg-[#fffafa] p-5 shadow-[0_8px_30px_rgba(122,76,86,0.06)]">
+                <div className="mb-5 flex items-center gap-2">
+                  <Filter
+                    className="h-4 w-4 text-primary"
+                    aria-hidden="true"
+                  />
 
-                  <h2
-                    className="
-                      font-semibold
-                      text-navy
-                    "
-                  >
+                  <h2 className="font-semibold text-[#4a323a]">
                     Filter Packages
                   </h2>
                 </div>
 
-                {filters}
+                <Filters
+                  idPrefix="desktop"
+                  {...filterProps}
+                />
               </div>
             </aside>
 
-            {/* =================================================
-                PACKAGE RESULTS
-                ================================================= */}
+            {/* ==================================================
+                RESULTS
+                ================================================== */}
 
             <div className="min-w-0">
-              {/* RESULTS TOOLBAR */}
-              <div
-                className="
-                  mb-6
-                  flex
-                  flex-col
-                  gap-4
-                  sm:flex-row
-                  sm:items-center
-                  sm:justify-between
-                "
-              >
-                <div>
-                  {!loading && !error && (
-                    <>
-                      <p className="text-sm text-navy/60">
-                        Showing{" "}
-                        <span className="font-semibold text-navy">
-                          {
-                            filteredPackages.length
-                          }
-                        </span>{" "}
-                        {filteredPackages.length ===
-                        1
-                          ? "package"
-                          : "packages"}
-                      </p>
+              {/* RESULT HEADER */}
 
-                      {collection !==
-                        "all" && (
-                        <p className="mt-1 text-xs text-navy/45">
-                          Collection:{" "}
-                          <span className="font-semibold text-navy/70">
+              <div className="mb-6 flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+                <div>
+                  {!loading &&
+                    !error && (
+                      <>
+                        <p className="text-sm text-[#765f66]">
+                          Showing{" "}
+                          <span className="font-semibold text-[#4a323a]">
                             {
-                              selectedCollectionLabel
+                              filteredPackages.length
                             }
-                          </span>
+                          </span>{" "}
+                          {resultLabel}
                         </p>
-                      )}
-                    </>
-                  )}
+
+                        {collection !==
+                          "all" && (
+                          <p className="mt-1 text-xs text-[#9a7b83]">
+                            Collection:{" "}
+                            <span className="font-semibold text-[#765f66]">
+                              {
+                                context.collectionLabel
+                              }
+                            </span>
+                          </p>
+                        )}
+                      </>
+                    )}
                 </div>
 
-                {/* SORT */}
                 <div className="w-full sm:w-56">
                   <FilterSelect
-                    label=""
+                    id="sort-packages"
+                    ariaLabel="Sort packages"
                     value={sortBy}
                     onChange={setSortBy}
-                    options={[
-                      {
-                        value: "recommended",
-                        label: "Recommended",
-                      },
-                      {
-                        value: "price-low",
-                        label: "Price: Low to High",
-                      },
-                      {
-                        value: "price-high",
-                        label: "Price: High to Low",
-                      },
-                      {
-                        value: "duration-short",
-                        label: "Duration: Shortest",
-                      },
-                      {
-                        value: "duration-long",
-                        label: "Duration: Longest",
-                      },
-                      {
-                        value: "newest",
-                        label: "Newest",
-                      },
-                    ]}
+                    options={SORT_OPTIONS}
                   />
                 </div>
               </div>
 
-              {/* =================================================
+              {/* ==================================================
                   LOADING
-                  ================================================= */}
+                  ================================================== */}
 
               {loading && (
                 <div
-                  className="
-                    grid
-                    grid-cols-1
-                    gap-5
-                    sm:grid-cols-2
-                    sm:gap-6
-                  "
+                  className="grid grid-cols-1 gap-5 sm:grid-cols-2 sm:gap-6"
+                  role="status"
+                  aria-label="Loading packages"
                 >
                   {[1, 2, 3, 4, 5, 6].map(
-                    (item) => (
+                    (key) => (
                       <PackageSkeleton
-                        key={item}
+                        key={key}
                       />
                     )
                   )}
                 </div>
               )}
 
-              {/* =================================================
+              {/* ==================================================
                   ERROR
-                  ================================================= */}
+                  ================================================== */}
 
-              {!loading && error && (
-                <div
-                  className="
-                    rounded-2xl
-                    border
-                    border-red-200
-                    bg-red-50
-                    p-6
-                    text-center
-                    sm:p-8
-                  "
-                >
-                  <p
-                    className="
-                      font-semibold
-                      text-navy
-                    "
+              {!loading &&
+                error &&
+                packages.length === 0 && (
+                  <div
+                    role="alert"
+                    className="rounded-[1.5rem] border border-[#e8cbd1] bg-[#fff2f4] p-6 text-center sm:p-8"
                   >
-                    Couldn't load packages
-                  </p>
+                    <p className="font-semibold text-[#4a323a]">
+                      Couldn't load
+                      packages
+                    </p>
 
-                  <p
-                    className="
-                      mt-2
-                      text-sm
-                      text-navy/60
-                    "
-                  >
-                    {error}
-                  </p>
+                    <p className="mt-2 text-sm text-[#a35c6d]">
+                      {error?.response?.data
+                        ?.detail ||
+                        error?.message ||
+                        "Unable to load packages right now."}
+                    </p>
 
-                  <button
-                    type="button"
-                    onClick={() =>
-                      window.location.reload()
-                    }
-                    className="
-                      mt-5
-                      inline-flex
-                      items-center
-                      gap-2
-                      rounded-full
-                      bg-accent
-                      px-5
-                      py-2.5
-                      font-semibold
-                      text-white
-                      transition-colors
-                      hover:bg-accent-hover
-                    "
-                  >
-                    Try Again
+                    <button
+                      type="button"
+                      onClick={() =>
+                        window.location.reload()
+                      }
+                      className={`${PRIMARY_BUTTON} mt-5`}
+                    >
+                      Try Again
 
-                    <ArrowRight className="h-4 w-4" />
-                  </button>
-                </div>
-              )}
+                      <ArrowRight
+                        className="h-4 w-4"
+                        aria-hidden="true"
+                      />
+                    </button>
+                  </div>
+                )}
 
-              {/* =================================================
+              {/* ==================================================
                   EMPTY
-                  ================================================= */}
+                  ================================================== */}
 
               {!loading &&
                 !error &&
                 filteredPackages.length ===
                   0 && (
-                  <div
-                    className="
-                      rounded-2xl
-                      border
-                      border-navy/10
-                      bg-surface
-                      p-8
-                      text-center
-                      sm:p-12
-                    "
-                  >
-                    <div
-                      className="
-                        mx-auto
-                        flex
-                        h-14
-                        w-14
-                        items-center
-                        justify-center
-                        rounded-full
-                        border
-                        border-navy/10
-                        bg-white
-                      "
-                    >
+                  <div className="rounded-[1.5rem] border border-rose-100 bg-gradient-to-br from-[#fffafa] to-[#fdf0f3] p-8 text-center shadow-[0_8px_30px_rgba(122,76,86,0.05)] sm:p-12">
+                    <div className="mx-auto flex h-14 w-14 items-center justify-center rounded-full border border-rose-200 bg-white">
                       <Search
-                        className="
-                          h-6
-                          w-6
-                          text-navy/40
-                        "
+                        className="h-6 w-6 text-primary"
+                        aria-hidden="true"
                       />
                     </div>
 
-                    <h2
-                      className="
-                        mt-4
-                        font-display
-                        text-xl
-                        font-semibold
-                        text-navy
-                        sm:text-2xl
-                      "
-                    >
+                    <h2 className="mt-4 font-display text-3xl font-semibold text-[#3c2930]">
                       No packages found
                     </h2>
 
-                    <p
-                      className="
-                        mx-auto
-                        mt-2
-                        max-w-md
-                        text-sm
-                        text-navy/60
-                      "
-                    >
-                      {destination !==
-                        "all"
-                        ? `There are currently no packages available for ${destination} matching your selected filters.`
-                        : packageType
-                          ? `There are currently no ${selectedPackageTypeLabel.toLowerCase()} packages matching your selected filters.`
-                          : collection !==
-                              "all"
-                            ? `There are currently no ${selectedCollectionLabel.toLowerCase()} packages matching your selected filters.`
-                            : "Try changing your search or filters to find available packages."}
+                    <p className="mx-auto mt-2 max-w-md text-sm text-[#765f66]">
+                      {
+                        context.emptyMessage
+                      }
                     </p>
 
                     {hasActiveFilters && (
@@ -2023,124 +1482,80 @@ export default function PackagesPage() {
                         onClick={
                           resetFilters
                         }
-                        className="
-                          mt-5
-                          inline-flex
-                          items-center
-                          gap-2
-                          rounded-full
-                          bg-accent
-                          px-5
-                          py-2.5
-                          font-semibold
-                          text-white
-                          transition-colors
-                          hover:bg-accent-hover
-                        "
+                        className={`${PRIMARY_BUTTON} mt-5`}
                       >
                         Clear Filters
 
-                        <X className="h-4 w-4" />
+                        <X
+                          className="h-4 w-4"
+                          aria-hidden="true"
+                        />
                       </button>
                     )}
                   </div>
                 )}
 
-              {/* =================================================
+              {/* ==================================================
                   PACKAGES
-                  ================================================= */}
+                  ================================================== */}
 
               {!loading &&
-                !error &&
                 filteredPackages.length >
                   0 && (
-                  <div
-                    className="
-                      grid
-                      grid-cols-1
-                      gap-5
-                      sm:grid-cols-2
-                      sm:gap-6
-                    "
-                  >
+                  <RevealGroup className="grid grid-cols-1 gap-5 sm:grid-cols-2 sm:gap-6">
                     {filteredPackages.map(
                       (pkg) => (
                         <PackageCard
-                          key={pkg?.id}
+                          key={
+                            pkg?.id ??
+                            pkg?.slug
+                          }
                           pkg={pkg}
                         />
                       )
                     )}
-                  </div>
+                  </RevealGroup>
                 )}
             </div>
           </div>
         </section>
       </main>
 
-      {/* ========================================================
+      {/* ======================================================
           MOBILE FILTER DRAWER
-          ======================================================== */}
+          ====================================================== */}
 
       {mobileFiltersOpen && (
         <div
-          className="
-            fixed
-            inset-0
-            z-[90]
-            lg:hidden
-          "
+          className="fixed inset-0 z-[90] lg:hidden"
+          role="dialog"
+          aria-modal="true"
+          aria-label="Filter packages"
         >
           {/* BACKDROP */}
+
           <button
             type="button"
             aria-label="Close filters"
             onClick={() =>
               setMobileFiltersOpen(false)
             }
-            className="
-              absolute
-              inset-0
-              bg-black/40
-            "
+            className="absolute inset-0 bg-[#3c2930]/40 backdrop-blur-[2px]"
           />
 
           {/* DRAWER */}
-          <div
-            className="
-              absolute
-              right-0
-              top-0
-              flex
-              h-full
-              w-[min(90vw,380px)]
-              flex-col
-              bg-white
-              shadow-2xl
-            "
-          >
-            {/* HEADER */}
-            <div
-              className="
-                flex
-                items-center
-                justify-between
-                gap-4
-                border-b
-                border-navy/10
-                px-5
-                py-4
-              "
-            >
-              <div className="flex items-center gap-2">
-                <Filter className="h-4 w-4 text-accent" />
 
-                <h2
-                  className="
-                    font-semibold
-                    text-navy
-                  "
-                >
+          <div className="absolute right-0 top-0 flex h-full w-[min(90vw,380px)] flex-col bg-[#fffafa] shadow-2xl">
+            {/* HEADER */}
+
+            <div className="flex items-center justify-between gap-4 border-b border-rose-100 px-5 py-4">
+              <div className="flex items-center gap-2">
+                <Filter
+                  className="h-4 w-4 text-primary"
+                  aria-hidden="true"
+                />
+
+                <h2 className="font-semibold text-[#4a323a]">
                   Filter Packages
                 </h2>
               </div>
@@ -2152,34 +1567,28 @@ export default function PackagesPage() {
                     false
                   )
                 }
-                className="
-                  flex
-                  h-9
-                  w-9
-                  items-center
-                  justify-center
-                  rounded-full
-                  bg-surface
-                "
+                className="flex h-9 w-9 items-center justify-center rounded-full bg-[#f9e8ec] transition-colors hover:bg-[#f3dce2]"
                 aria-label="Close filters"
               >
-                <X className="h-5 w-5 text-navy" />
+                <X
+                  className="h-5 w-5 text-[#4a323a]"
+                  aria-hidden="true"
+                />
               </button>
             </div>
 
-            {/* FILTER BODY */}
+            {/* FILTER CONTENT */}
+
             <div className="flex-1 overflow-y-auto p-5">
-              {filters}
+              <Filters
+                idPrefix="mobile"
+                {...filterProps}
+              />
             </div>
 
             {/* FOOTER */}
-            <div
-              className="
-                border-t
-                border-navy/10
-                p-5
-              "
-            >
+
+            <div className="border-t border-rose-100 bg-white/80 p-5">
               <button
                 type="button"
                 onClick={() =>
@@ -2187,21 +1596,12 @@ export default function PackagesPage() {
                     false
                   )
                 }
-                className="
-                  w-full
-                  rounded-xl
-                  bg-accent
-                  px-5
-                  py-3.5
-                  font-semibold
-                  text-white
-                  transition-colors
-                  hover:bg-accent-hover
-                "
+                className="w-full rounded-xl bg-[#8f5666] px-5 py-3.5 font-semibold text-white shadow-sm transition-all hover:-translate-y-0.5 hover:bg-[#7c4858] hover:shadow-md"
               >
                 Show{" "}
                 {filteredPackages.length}{" "}
-                {filteredPackages.length === 1
+                {filteredPackages.length ===
+                1
                   ? "Package"
                   : "Packages"}
               </button>
@@ -2210,20 +1610,1154 @@ export default function PackagesPage() {
         </div>
       )}
 
-      {/* ========================================================
+      {/* ======================================================
           FAQ
-          ======================================================== */}
+          ====================================================== */}
 
-      <FAQSection category="packages"/>
+      <FAQSection category="packages" />
 
-      {/* ========================================================
+      {/* ======================================================
           FOOTER
-          ======================================================== */}
+          ====================================================== */}
 
       <Footer />
     </>
   );
 }
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+// import { useEffect, useMemo, useState } from "react";
+// import { Link, useSearchParams } from "react-router-dom";
+// import {
+//   ArrowRight,
+//   ChevronDown,
+//   Clock,
+//   Filter,
+//   ImageOff,
+//   MapPin,
+//   Search,
+//   SlidersHorizontal,
+//   X,
+// } from "lucide-react";
+
+// import { getPackages } from "../api/content";
+// import { useQuery } from "../hooks/useQuery";
+// import Footer from "../components/Footer";
+// import Seo from "../components/Seo";
+// import FAQSection from "../components/FAQSection";
+// import { RevealGroup } from "../components/Reveal";
+
+// /* ==========================================================
+//    BRAND
+//    Written in Title Case. Set VITE_SITE_URL in .env so SEO
+//    links use your real domain.
+//    ========================================================== */
+
+// const BRAND_NAME = "Manyara Prive Vacations";
+
+// const SITE_URL = (
+//   import.meta.env.VITE_SITE_URL || window.location.origin
+// ).replace(/\/$/, "");
+
+// /* ==========================================================
+//    CONSTANTS
+//    ========================================================== */
+
+// const PACKAGE_TYPE_LABELS = {
+//   pilgrimage: "Pilgrimage",
+//   mountains_adventure: "Mountains & Adventure",
+//   romantic: "Romantic",
+//   international: "International",
+//   beach: "Beach",
+//   family: "Family",
+//   wildlife_nature: "Wildlife & Nature",
+// };
+
+// const PACKAGE_COLLECTIONS = [
+//   {
+//     value: "all",
+//     label: "All Packages",
+//     description: `Explore all available holiday packages from ${BRAND_NAME}.`,
+//   },
+//   {
+//     value: "new",
+//     label: "New",
+//     description:
+//       "Discover our newest holiday packages and recently added travel experiences.",
+//   },
+//   {
+//     value: "most-visited",
+//     label: "Most Visited",
+//     description:
+//       "Explore holiday packages for destinations loved and visited by travellers.",
+//   },
+//   {
+//     value: "featured",
+//     label: "Featured",
+//     description: `Explore handpicked featured holiday packages from ${BRAND_NAME}.`,
+//   },
+//   {
+//     value: "recommended",
+//     label: "Recommended",
+//     description:
+//       "Discover holiday packages recommended for memorable travel experiences.",
+//   },
+//   {
+//     value: "trending",
+//     label: "Trending",
+//     description:
+//       "Explore trending holiday packages and popular travel experiences.",
+//   },
+//   {
+//     value: "popular",
+//     label: "Popular",
+//     description: `Discover popular holiday packages selected by ${BRAND_NAME}.`,
+//   },
+// ];
+
+// /* Collection tab -> true/false flag on the package */
+// const COLLECTION_FLAG_MAP = {
+//   new: "is_new",
+//   "most-visited": "is_most_visited",
+//   featured: "is_featured",
+//   recommended: "is_recommended",
+//   trending: "is_trending",
+//   popular: "is_popular",
+// };
+
+// const PRICE_OPTIONS = [
+//   { value: "all", label: "Any price" },
+//   { value: "under-25000", label: "Under ₹25,000" },
+//   { value: "25000-50000", label: "₹25,000 – ₹50,000" },
+//   { value: "50000-100000", label: "₹50,000 – ₹1,00,000" },
+//   { value: "100000-plus", label: "Above ₹1,00,000" },
+// ];
+
+// const PRICE_TESTS = {
+//   "under-25000": (price) => price < 25000,
+//   "25000-50000": (price) => price >= 25000 && price <= 50000,
+//   "50000-100000": (price) => price >= 50000 && price <= 100000,
+//   "100000-plus": (price) => price > 100000,
+// };
+
+// const DURATION_OPTIONS = [
+//   { value: "all", label: "Any duration" },
+//   { value: "1-3", label: "1 – 3 days" },
+//   { value: "4-7", label: "4 – 7 days" },
+//   { value: "8-14", label: "8 – 14 days" },
+//   { value: "15-plus", label: "15+ days" },
+// ];
+
+// const DURATION_TESTS = {
+//   "1-3": (days) => days >= 1 && days <= 3,
+//   "4-7": (days) => days >= 4 && days <= 7,
+//   "8-14": (days) => days >= 8 && days <= 14,
+//   "15-plus": (days) => days >= 15,
+// };
+
+// const SORT_OPTIONS = [
+//   { value: "recommended", label: "Recommended" },
+//   { value: "price-low", label: "Price: Low to High" },
+//   { value: "price-high", label: "Price: High to Low" },
+//   { value: "duration-short", label: "Duration: Shortest" },
+//   { value: "duration-long", label: "Duration: Longest" },
+//   { value: "newest", label: "Newest" },
+// ];
+
+// /* Shared look for every text field */
+// const INPUT =
+//   "w-full rounded-xl border border-border bg-input px-4 py-3 text-sm text-text-dark outline-none transition-colors placeholder:text-placeholder focus:border-primary focus:ring-2 focus:ring-primary/30";
+
+// const PRIMARY_BUTTON =
+//   "inline-flex items-center justify-center gap-2 rounded-full bg-primary px-5 py-2.5 font-semibold text-white transition-colors hover:bg-primary-hover";
+
+// /* ==========================================================
+//    NORMALIZERS
+//    ========================================================== */
+
+// const TYPE_ALIASES = {
+//   mountains_and_adventure: "mountains_adventure",
+//   mountain_adventure: "mountains_adventure",
+//   mountains: "mountains_adventure",
+//   adventure: "mountains_adventure",
+//   wildlife_and_nature: "wildlife_nature",
+//   wildlife: "wildlife_nature",
+//   nature: "wildlife_nature",
+// };
+
+// const normalizePackageType = (value) => {
+//   const normalized = String(value || "")
+//     .trim()
+//     .toLowerCase()
+//     .replace(/&/g, "and")
+//     .replace(/[\s-]+/g, "_");
+
+//   return TYPE_ALIASES[normalized] || normalized;
+// };
+
+// const normalizeDestination = (value) =>
+//   String(value || "")
+//     .trim()
+//     .toLowerCase()
+//     .replace(/\s+/g, " ");
+
+// const COLLECTION_ALIASES = {
+//   newest: "new",
+//   recommendation: "recommended",
+//   mostvisited: "most-visited",
+//   "most-visited-packages": "most-visited",
+// };
+
+// const normalizeCollection = (value) => {
+//   const normalized = String(value || "")
+//     .trim()
+//     .toLowerCase()
+//     .replace(/[\s_]+/g, "-");
+
+//   const collection = COLLECTION_ALIASES[normalized] || normalized;
+
+//   return PACKAGE_COLLECTIONS.some((item) => item.value === collection)
+//     ? collection
+//     : "all";
+// };
+
+// /* ==========================================================
+//    HELPERS
+//    ========================================================== */
+
+// const toNumber = (value, fallback = 0) => {
+//   const number = Number(value);
+//   return Number.isFinite(number) ? number : fallback;
+// };
+
+// function getSafeArray(value) {
+//   if (Array.isArray(value)) return value;
+//   if (Array.isArray(value?.items)) return value.items;
+//   if (Array.isArray(value?.data)) return value.data;
+//   return [];
+// }
+
+// const isPublished = (pkg) =>
+//   pkg?.status === undefined ||
+//   pkg?.status === "published" ||
+//   pkg?.is_published === true;
+
+// const getImageUrl = (image) =>
+//   typeof image === "string" ? image : image?.url || "";
+
+// const getPackageImage = (pkg) => {
+//   if (Array.isArray(pkg?.images)) {
+//     const first = pkg.images.map(getImageUrl).find(Boolean);
+//     if (first) return first;
+//   }
+
+//   // Older API structures
+//   return getImageUrl(pkg?.image) || pkg?.image_url || "";
+// };
+
+// const getPackageTypeLabel = (type) => {
+//   const normalized = normalizePackageType(type);
+
+//   return (
+//     PACKAGE_TYPE_LABELS[normalized] ||
+//     String(type || "")
+//       .replace(/[_-]+/g, " ")
+//       .replace(/\b\w/g, (char) => char.toUpperCase()) ||
+//     "Holiday"
+//   );
+// };
+
+// const formatPrice = (price) => {
+//   const number = Number(price);
+
+//   if (price === null || price === undefined || price === "") {
+//     return "Price on request";
+//   }
+
+//   return Number.isFinite(number)
+//     ? `₹${number.toLocaleString("en-IN")}`
+//     : "Price on request";
+// };
+
+// const formatDuration = (days, nights) => {
+//   if (!days || nights === undefined || nights === null) return "Flexible";
+
+//   return `${days} ${Number(days) === 1 ? "day" : "days"} / ${nights} ${
+//     Number(nights) === 1 ? "night" : "nights"
+//   }`;
+// };
+
+// /* ==========================================================
+//    FILTER + SORT
+//    ========================================================== */
+
+// function matchesFilters(pkg, f) {
+//   const packageType = normalizePackageType(pkg?.package_type || pkg?.type);
+
+//   if (f.searchTerm) {
+//     const searchable = [
+//       pkg?.title,
+//       pkg?.destination,
+//       pkg?.slug,
+//       pkg?.description,
+//       PACKAGE_TYPE_LABELS[packageType],
+//     ];
+
+//     const found = searchable.some((value) =>
+//       String(value || "")
+//         .toLowerCase()
+//         .includes(f.searchTerm)
+//     );
+
+//     if (!found) return false;
+//   }
+
+//   if (f.packageType && packageType !== f.packageType) return false;
+
+//   if (
+//     f.destination &&
+//     normalizeDestination(pkg?.destination) !== f.destination
+//   ) {
+//     return false;
+//   }
+
+//   if (f.collectionFlag && pkg?.[f.collectionFlag] !== true) return false;
+
+//   if (f.priceRange !== "all") {
+//     const price = Number(pkg?.price);
+//     if (!Number.isFinite(price) || !PRICE_TESTS[f.priceRange](price)) {
+//       return false;
+//     }
+//   }
+
+//   if (f.durationRange !== "all") {
+//     const days = Number(pkg?.duration_days);
+//     if (!Number.isFinite(days) || !DURATION_TESTS[f.durationRange](days)) {
+//       return false;
+//     }
+//   }
+
+//   return true;
+// }
+
+// const SORTERS = {
+//   "price-low": (a, b) => toNumber(a?.price) - toNumber(b?.price),
+//   "price-high": (a, b) => toNumber(b?.price) - toNumber(a?.price),
+//   "duration-short": (a, b) =>
+//     toNumber(a?.duration_days) - toNumber(b?.duration_days),
+//   "duration-long": (a, b) =>
+//     toNumber(b?.duration_days) - toNumber(a?.duration_days),
+//   newest: (a, b) =>
+//     toNumber(new Date(b?.created_at || 0).getTime()) -
+//     toNumber(new Date(a?.created_at || 0).getTime()),
+
+//   /* display_order, then recommended, then featured, then id */
+//   recommended: (a, b) => {
+//     const order =
+//       toNumber(a?.display_order, Number.MAX_SAFE_INTEGER) -
+//       toNumber(b?.display_order, Number.MAX_SAFE_INTEGER);
+
+//     if (order) return order;
+
+//     if (Boolean(a?.is_recommended) !== Boolean(b?.is_recommended)) {
+//       return a?.is_recommended ? -1 : 1;
+//     }
+
+//     if (Boolean(a?.is_featured) !== Boolean(b?.is_featured)) {
+//       return a?.is_featured ? -1 : 1;
+//     }
+
+//     return toNumber(a?.id) - toNumber(b?.id);
+//   },
+// };
+
+// /* ==========================================================
+//    PAGE TEXT + SEO
+//    ========================================================== */
+
+// function getPageContext({ destination, packageType, collection }) {
+//   const collectionItem =
+//     PACKAGE_COLLECTIONS.find((item) => item.value === collection) ||
+//     PACKAGE_COLLECTIONS[0];
+
+//   const typeLabel = packageType ? getPackageTypeLabel(packageType) : "";
+//   const typeLower = typeLabel.toLowerCase();
+//   const collectionLower = collectionItem.label.toLowerCase();
+
+//   if (destination !== "all") {
+//     return {
+//       title: `${destination} Packages`,
+//       description: `Explore all available holiday packages for ${destination} from ${BRAND_NAME}. Compare destinations, durations and prices.`,
+//       seoTitle: `${destination} Holiday Packages | ${BRAND_NAME}`,
+//       seoDescription: `Explore ${destination} holiday packages from ${BRAND_NAME}. Discover available travel experiences, durations and prices.`,
+//       emptyMessage: `There are currently no packages available for ${destination} matching your selected filters.`,
+//       typeLabel,
+//       collectionLabel: collectionItem.label,
+//     };
+//   }
+
+//   if (packageType) {
+//     return {
+//       title: `${typeLabel} Packages`,
+//       description: `Explore ${typeLower} holiday packages from ${BRAND_NAME}. Discover curated destinations, experiences, durations and prices.`,
+//       seoTitle: `${typeLabel} Holiday Packages | ${BRAND_NAME}`,
+//       seoDescription: `Explore ${typeLower} holiday packages from ${BRAND_NAME}. Discover curated destinations, travel experiences, durations and prices.`,
+//       emptyMessage: `There are currently no ${typeLower} packages matching your selected filters.`,
+//       typeLabel,
+//       collectionLabel: collectionItem.label,
+//     };
+//   }
+
+//   if (collection !== "all") {
+//     return {
+//       title: `${collectionItem.label} Holiday Packages`,
+//       description: collectionItem.description,
+//       seoTitle: `${collectionItem.label} Holiday Packages | ${BRAND_NAME}`,
+//       seoDescription: `Explore ${collectionLower} holiday packages from ${BRAND_NAME}. Discover curated destinations, travel experiences, durations and prices.`,
+//       emptyMessage: `There are currently no ${collectionLower} packages matching your selected filters.`,
+//       typeLabel,
+//       collectionLabel: collectionItem.label,
+//     };
+//   }
+
+//   return {
+//     title: "Find the right holiday package for your journey",
+//     description:
+//       "Explore holiday packages by destination, package type, price and duration.",
+//     seoTitle: `Holiday Packages | ${BRAND_NAME}`,
+//     seoDescription: `Explore holiday packages from ${BRAND_NAME}. Discover curated travel experiences, destinations, durations and prices.`,
+//     emptyMessage:
+//       "Try changing your search or filters to find available packages.",
+//     typeLabel,
+//     collectionLabel: collectionItem.label,
+//   };
+// }
+
+// /* ==========================================================
+//    PACKAGE CARD
+//    ========================================================== */
+
+// function PackageCard({ pkg }) {
+//   const imageUrl = getPackageImage(pkg);
+//   const href = `/packages/${encodeURIComponent(pkg?.slug || pkg?.id)}`;
+//   const typeLabel = getPackageTypeLabel(pkg?.package_type || pkg?.type);
+
+//   return (
+//     <article className="group overflow-hidden rounded-2xl border border-divider bg-card shadow-travel-card transition-all duration-300 hover:-translate-y-1 hover:border-secondary-light hover:shadow-travel-hover">
+//       <Link to={href} className="block">
+//         {/* IMAGE */}
+//         <div className="relative aspect-[16/10] overflow-hidden bg-surface">
+//           {imageUrl ? (
+//             <img
+//               src={imageUrl}
+//               alt={pkg?.title || "Holiday package"}
+//               className="h-full w-full object-cover transition-transform duration-500 group-hover:scale-105"
+//               loading="lazy"
+//             />
+//           ) : (
+//             <div className="flex h-full w-full items-center justify-center bg-surface">
+//               <ImageOff className="h-8 w-8 text-ink-300" aria-hidden="true" />
+//             </div>
+//           )}
+
+//           <span className="absolute left-3 top-3 rounded-full bg-card/95 px-3 py-1.5 text-xs font-semibold text-primary-dark shadow-sm backdrop-blur">
+//             {typeLabel}
+//           </span>
+
+//           <div className="absolute right-3 top-3 flex flex-wrap justify-end gap-2">
+//             {pkg?.is_new && (
+//               <span className="rounded-full bg-accent px-3 py-1.5 text-xs font-semibold text-white shadow-sm">
+//                 New
+//               </span>
+//             )}
+
+//             {pkg?.is_featured && (
+//               <span className="rounded-full bg-primary px-3 py-1.5 text-xs font-semibold text-white shadow-sm">
+//                 Featured
+//               </span>
+//             )}
+//           </div>
+//         </div>
+
+//         {/* CONTENT */}
+//         <div className="p-5">
+//           <div className="flex items-center gap-1.5 text-xs font-medium text-muted">
+//             <MapPin className="h-3.5 w-3.5" aria-hidden="true" />
+//             <span>{pkg?.destination || "India"}</span>
+//           </div>
+
+//           <h2 className="mt-2 line-clamp-2 font-display text-2xl font-semibold leading-snug text-text-dark transition-colors group-hover:text-primary">
+//             {pkg?.title || "Holiday Package"}
+//           </h2>
+
+//           {pkg?.description && (
+//             <p className="mt-2 line-clamp-2 text-sm leading-6 text-text-secondary">
+//               {pkg.description}
+//             </p>
+//           )}
+
+//           <div className="mt-5 flex items-end justify-between gap-4 border-t border-divider pt-4">
+//             <div>
+//               <p className="text-xs text-muted">Starting from</p>
+//               <p className="mt-0.5 text-lg font-bold text-primary">
+//                 {formatPrice(pkg?.price)}
+//               </p>
+//             </div>
+
+//             <div className="inline-flex items-center gap-1.5 text-xs font-medium text-text-secondary">
+//               <Clock className="h-4 w-4" aria-hidden="true" />
+//               <span>{formatDuration(pkg?.duration_days, pkg?.duration_nights)}</span>
+//             </div>
+//           </div>
+
+//           <div className="mt-4 inline-flex items-center gap-2 text-sm font-semibold text-primary">
+//             View Package
+//             <ArrowRight
+//               className="h-4 w-4 transition-transform duration-200 group-hover:translate-x-1"
+//               aria-hidden="true"
+//             />
+//           </div>
+//         </div>
+//       </Link>
+//     </article>
+//   );
+// }
+
+// /* First visit only: light placeholder cards. */
+// function PackageSkeleton() {
+//   return (
+//     <div
+//       className="overflow-hidden rounded-2xl border border-divider bg-card"
+//       aria-hidden="true"
+//     >
+//       <div className="aspect-[16/10] animate-pulse bg-primary/10" />
+
+//       <div className="space-y-4 p-5">
+//         <div className="h-3 w-24 animate-pulse rounded bg-primary/10" />
+//         <div className="h-6 w-4/5 animate-pulse rounded bg-primary/10" />
+//         <div className="h-4 w-full animate-pulse rounded bg-primary/10" />
+//         <div className="h-4 w-2/3 animate-pulse rounded bg-primary/10" />
+
+//         <div className="flex justify-between border-t border-divider pt-4">
+//           <div className="h-6 w-28 animate-pulse rounded bg-primary/10" />
+//           <div className="h-5 w-20 animate-pulse rounded bg-primary/10" />
+//         </div>
+//       </div>
+//     </div>
+//   );
+// }
+
+// /* ==========================================================
+//    FILTERS
+//    Used by the desktop sidebar and the mobile drawer.
+//    idPrefix keeps the field ids unique.
+//    ========================================================== */
+
+// function FilterSelect({ id, label, ariaLabel, value, onChange, options }) {
+//   return (
+//     <div>
+//       {label && (
+//         <label
+//           htmlFor={id}
+//           className="mb-2 block text-xs font-semibold text-text-secondary"
+//         >
+//           {label}
+//         </label>
+//       )}
+
+//       <div className="relative">
+//         <select
+//           id={id}
+//           aria-label={label ? undefined : ariaLabel}
+//           value={value}
+//           onChange={(event) => onChange(event.target.value)}
+//           className={`${INPUT} appearance-none pr-10`}
+//         >
+//           {options.map((option) => (
+//             <option key={option.value} value={option.value}>
+//               {option.label}
+//             </option>
+//           ))}
+//         </select>
+
+//         <ChevronDown
+//           className="pointer-events-none absolute right-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted"
+//           aria-hidden="true"
+//         />
+//       </div>
+//     </div>
+//   );
+// }
+
+// function Filters({
+//   idPrefix,
+//   search,
+//   onSearch,
+//   destination,
+//   onDestination,
+//   destinationOptions,
+//   priceRange,
+//   onPrice,
+//   durationRange,
+//   onDuration,
+//   showReset,
+//   onReset,
+// }) {
+//   return (
+//     <div className="space-y-5">
+//       <div>
+//         <label
+//           htmlFor={`${idPrefix}-search`}
+//           className="mb-2 block text-xs font-semibold text-text-secondary"
+//         >
+//           Search
+//         </label>
+
+//         <div className="relative">
+//           <Search
+//             className="absolute left-3.5 top-1/2 h-4 w-4 -translate-y-1/2 text-muted"
+//             aria-hidden="true"
+//           />
+//           <input
+//             id={`${idPrefix}-search`}
+//             type="search"
+//             value={search}
+//             onChange={(event) => onSearch(event.target.value)}
+//             placeholder="Search packages..."
+//             className={`${INPUT} px-10`}
+//           />
+//         </div>
+//       </div>
+
+//       <FilterSelect
+//         id={`${idPrefix}-destination`}
+//         label="Destination"
+//         value={destination}
+//         onChange={onDestination}
+//         options={destinationOptions}
+//       />
+
+//       <FilterSelect
+//         id={`${idPrefix}-price`}
+//         label="Price"
+//         value={priceRange}
+//         onChange={onPrice}
+//         options={PRICE_OPTIONS}
+//       />
+
+//       <FilterSelect
+//         id={`${idPrefix}-duration`}
+//         label="Duration"
+//         value={durationRange}
+//         onChange={onDuration}
+//         options={DURATION_OPTIONS}
+//       />
+
+//       {showReset && (
+//         <button
+//           type="button"
+//           onClick={onReset}
+//           className="inline-flex w-full items-center justify-center gap-2 rounded-xl border border-border px-4 py-3 text-sm font-semibold text-text-dark transition-colors hover:border-primary hover:bg-surface-soft hover:text-primary"
+//         >
+//           <X className="h-4 w-4" aria-hidden="true" />
+//           Clear Filters
+//         </button>
+//       )}
+//     </div>
+//   );
+// }
+
+// /* ==========================================================
+//    PAGE
+//    ========================================================== */
+
+// export default function PackagesPage() {
+//   const [searchParams, setSearchParams] = useSearchParams();
+
+//   /* URL is the single source of truth for collection, type and
+//      destination, so links and the back button always work. */
+//   const collection = normalizeCollection(searchParams.get("collection"));
+//   const packageType = normalizePackageType(searchParams.get("type"));
+//   const urlDestination = (searchParams.get("destination") || "").trim();
+
+//   /* Cached data: instant on repeat visits, updates itself when fresh. */
+//   const { data, loading, error } = useQuery(getPackages);
+
+//   const packages = useMemo(
+//     () => getSafeArray(data).filter(isPublished),
+//     [data]
+//   );
+
+//   const [search, setSearch] = useState("");
+//   const [priceRange, setPriceRange] = useState("all");
+//   const [durationRange, setDurationRange] = useState("all");
+//   const [sortBy, setSortBy] = useState("recommended");
+//   const [mobileFiltersOpen, setMobileFiltersOpen] = useState(false);
+
+//   /* Destination dropdown, unique and sorted */
+//   const destinationOptions = useMemo(() => {
+//     const unique = new Map();
+
+//     packages.forEach((pkg) => {
+//       const name = String(pkg?.destination || "").trim();
+//       const key = normalizeDestination(name);
+//       if (name && !unique.has(key)) unique.set(key, name);
+//     });
+
+//     return [
+//       { value: "all", label: "All destinations" },
+//       ...[...unique.values()]
+//         .sort((a, b) => a.localeCompare(b))
+//         .map((name) => ({ value: name, label: name })),
+//     ];
+//   }, [packages]);
+
+//   /* ?destination=goa still selects "Goa" in the dropdown */
+//   const destination = useMemo(() => {
+//     if (!urlDestination || urlDestination.toLowerCase() === "all") {
+//       return "all";
+//     }
+
+//     const match = destinationOptions.find(
+//       (option) =>
+//         option.value !== "all" &&
+//         normalizeDestination(option.value) ===
+//           normalizeDestination(urlDestination)
+//     );
+
+//     return match ? match.value : urlDestination;
+//   }, [urlDestination, destinationOptions]);
+
+//   const filteredPackages = useMemo(() => {
+//     const filters = {
+//       searchTerm: search.trim().toLowerCase(),
+//       packageType,
+//       destination: destination === "all" ? "" : normalizeDestination(destination),
+//       collectionFlag: COLLECTION_FLAG_MAP[collection] || "",
+//       priceRange,
+//       durationRange,
+//     };
+
+//     return packages
+//       .filter((pkg) => matchesFilters(pkg, filters))
+//       .sort(SORTERS[sortBy] || SORTERS.recommended);
+//   }, [
+//     packages,
+//     search,
+//     packageType,
+//     destination,
+//     collection,
+//     priceRange,
+//     durationRange,
+//     sortBy,
+//   ]);
+
+//   const context = getPageContext({ destination, packageType, collection });
+
+//   const activeFilterCount = [
+//     search.trim(),
+//     destination !== "all",
+//     packageType,
+//     priceRange !== "all",
+//     durationRange !== "all",
+//   ].filter(Boolean).length;
+
+//   const hasActiveFilters = activeFilterCount > 0;
+
+//   /* ---------------- URL updates ---------------- */
+
+//   const updateParams = (changes) => {
+//     const params = new URLSearchParams(searchParams);
+
+//     Object.entries(changes).forEach(([key, value]) => {
+//       if (!value || value === "all") params.delete(key);
+//       else params.set(key, value);
+//     });
+
+//     setSearchParams(params, { replace: true });
+//   };
+
+//   const handleCollectionChange = (value) =>
+//     updateParams({ collection: normalizeCollection(value) });
+
+//   const handleDestinationChange = (value) =>
+//     updateParams({ destination: value });
+
+//   /* Clears the refinements but keeps the selected collection tab. */
+//   const resetFilters = () => {
+//     setSearch("");
+//     setPriceRange("all");
+//     setDurationRange("all");
+//     setSortBy("recommended");
+//     updateParams({ destination: "", type: "" });
+//   };
+
+//   /* ---------------- Mobile drawer: Escape + no background scroll ---------------- */
+
+//   useEffect(() => {
+//     if (!mobileFiltersOpen) return undefined;
+
+//     const onKeyDown = (event) => {
+//       if (event.key === "Escape") setMobileFiltersOpen(false);
+//     };
+
+//     const previousOverflow = document.body.style.overflow;
+//     document.body.style.overflow = "hidden";
+//     document.addEventListener("keydown", onKeyDown);
+
+//     return () => {
+//       document.body.style.overflow = previousOverflow;
+//       document.removeEventListener("keydown", onKeyDown);
+//     };
+//   }, [mobileFiltersOpen]);
+
+//   const filterProps = {
+//     search,
+//     onSearch: setSearch,
+//     destination,
+//     onDestination: handleDestinationChange,
+//     destinationOptions,
+//     priceRange,
+//     onPrice: setPriceRange,
+//     durationRange,
+//     onDuration: setDurationRange,
+//     showReset: hasActiveFilters,
+//     onReset: resetFilters,
+//   };
+
+//   const resultLabel = filteredPackages.length === 1 ? "package" : "packages";
+
+//   return (
+//     <>
+//       <Seo
+//         title={context.seoTitle}
+//         description={context.seoDescription}
+//         /* Filters are not separate pages, so they share one canonical URL. */
+//         canonical={`${SITE_URL}/packages`}
+//       />
+
+//       <main className="min-h-screen bg-background">
+//         {/* ====================================================
+//             HERO
+//             ==================================================== */}
+
+//       <section className="border-b border-divider bg-gradient-to-b from-white via-white to-surface-soft/40">
+//   <div className="mx-auto max-w-7xl px-4 py-8 sm:px-6 sm:py-10 lg:px-8 lg:py-14">
+//     <div className="max-w-4xl">
+//       <p className="text-xs font-semibold uppercase tracking-[0.16em] text-primary">
+//         Explore with {BRAND_NAME}
+//       </p>
+
+//       <h1 className="mt-2 font-display text-4xl font-semibold leading-tight text-text-display sm:text-5xl">
+//         {context.title}
+//       </h1>
+
+//       <p className="mt-3 max-w-2xl text-sm leading-7 text-text-secondary sm:text-base">
+//         {context.description}
+//       </p>
+//     </div>
+//   </div>
+// </section>
+
+//         {/* ====================================================
+//             CONTENT
+//             ==================================================== */}
+
+//         <section className="mx-auto max-w-7xl px-4 py-6 sm:px-6 sm:py-8 lg:px-8 lg:py-10">
+//           {/* COLLECTION TABS */}
+//           <div className="mb-8 sm:mb-10">
+//             <h2 className="mb-4 font-display text-lg font-semibold text-text-dark">
+//               Explore our packages
+//             </h2>
+
+//             <div className="flex gap-2 overflow-x-auto pb-2 scrollbar-hide">
+//               {PACKAGE_COLLECTIONS.map((item) => {
+//                 const active = collection === item.value;
+
+//                 return (
+//                   <button
+//                     key={item.value}
+//                     type="button"
+//                     onClick={() => handleCollectionChange(item.value)}
+//                     aria-pressed={active}
+//                     className={`inline-flex shrink-0 items-center justify-center rounded-full border px-4 py-2.5 text-sm font-semibold transition-all duration-200 ${
+//                       active
+//                         ? "border-primary bg-primary text-white shadow-sm"
+//                         : "border-divider bg-card text-text hover:border-primary hover:text-primary"
+//                     }`}
+//                   >
+//                     {item.label}
+//                   </button>
+//                 );
+//               })}
+//             </div>
+//           </div>
+
+//           {/* ACTIVE URL CONTEXT */}
+//           {(destination !== "all" || packageType) && (
+//             <div className="mb-6 flex flex-wrap gap-2">
+//               {destination !== "all" && (
+//                 <span className="inline-flex items-center gap-1.5 rounded-full border border-divider bg-primary-lighter px-3 py-1.5 text-xs font-semibold text-primary-dark">
+//                   <MapPin className="h-3.5 w-3.5" aria-hidden="true" />
+//                   {destination}
+//                 </span>
+//               )}
+
+//               {packageType && (
+//                 <span className="inline-flex items-center rounded-full border border-divider bg-primary-lighter px-3 py-1.5 text-xs font-semibold text-primary-dark">
+//                   {context.typeLabel}
+//                 </span>
+//               )}
+//             </div>
+//           )}
+
+//           {/* MOBILE FILTER BUTTON */}
+//           <div className="mb-6 lg:hidden">
+//             <button
+//               type="button"
+//               onClick={() => setMobileFiltersOpen(true)}
+//               className="inline-flex w-full items-center justify-center gap-2 rounded-xl border border-border bg-card px-5 py-3.5 font-semibold text-text-dark shadow-sm transition-colors hover:border-primary"
+//             >
+//               <SlidersHorizontal className="h-4 w-4" aria-hidden="true" />
+//               Filters
+//               {hasActiveFilters && (
+//                 <span className="inline-flex h-5 min-w-5 items-center justify-center rounded-full bg-primary px-1.5 text-xs text-white">
+//                   {activeFilterCount}
+//                 </span>
+//               )}
+//             </button>
+//           </div>
+
+//           <div className="grid grid-cols-1 items-start gap-8 lg:grid-cols-[260px_minmax(0,1fr)] lg:gap-10">
+//             {/* DESKTOP SIDEBAR */}
+//             <aside className="sticky top-[calc(var(--top-info-height,0px)+6rem)] hidden lg:block">
+//               <div className="rounded-2xl border border-divider bg-surface p-5">
+//                 <div className="mb-5 flex items-center gap-2">
+//                   <Filter className="h-4 w-4 text-primary" aria-hidden="true" />
+//                   <h2 className="font-semibold text-text-dark">
+//                     Filter Packages
+//                   </h2>
+//                 </div>
+
+//                 <Filters idPrefix="desktop" {...filterProps} />
+//               </div>
+//             </aside>
+
+//             {/* RESULTS */}
+//             <div className="min-w-0">
+//               <div className="mb-6 flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+//                 <div>
+//                   {!loading && !error && (
+//                     <>
+//                       <p className="text-sm text-text-secondary">
+//                         Showing{" "}
+//                         <span className="font-semibold text-text-dark">
+//                           {filteredPackages.length}
+//                         </span>{" "}
+//                         {resultLabel}
+//                       </p>
+
+//                       {collection !== "all" && (
+//                         <p className="mt-1 text-xs text-muted">
+//                           Collection:{" "}
+//                           <span className="font-semibold text-text-secondary">
+//                             {context.collectionLabel}
+//                           </span>
+//                         </p>
+//                       )}
+//                     </>
+//                   )}
+//                 </div>
+
+//                 <div className="w-full sm:w-56">
+//                   <FilterSelect
+//                     id="sort-packages"
+//                     ariaLabel="Sort packages"
+//                     value={sortBy}
+//                     onChange={setSortBy}
+//                     options={SORT_OPTIONS}
+//                   />
+//                 </div>
+//               </div>
+
+//               {/* LOADING (first visit only) */}
+//               {loading && (
+//                 <div
+//                   className="grid grid-cols-1 gap-5 sm:grid-cols-2 sm:gap-6"
+//                   role="status"
+//                   aria-label="Loading packages"
+//                 >
+//                   {[1, 2, 3, 4, 5, 6].map((key) => (
+//                     <PackageSkeleton key={key} />
+//                   ))}
+//                 </div>
+//               )}
+
+//               {/* ERROR (nothing cached and the request failed) */}
+//               {!loading && error && packages.length === 0 && (
+//                 <div
+//                   role="alert"
+//                   className="rounded-2xl border border-error/30 bg-error-bg p-6 text-center sm:p-8"
+//                 >
+//                   <p className="font-semibold text-text-dark">
+//                     Couldn't load packages
+//                   </p>
+
+//                   <p className="mt-2 text-sm text-error-text">
+//                     {error?.response?.data?.detail ||
+//                       error?.message ||
+//                       "Unable to load packages right now."}
+//                   </p>
+
+//                   <button
+//                     type="button"
+//                     onClick={() => window.location.reload()}
+//                     className={`${PRIMARY_BUTTON} mt-5`}
+//                   >
+//                     Try Again
+//                     <ArrowRight className="h-4 w-4" aria-hidden="true" />
+//                   </button>
+//                 </div>
+//               )}
+
+//               {/* EMPTY */}
+//               {!loading && !error && filteredPackages.length === 0 && (
+//                 <div className="rounded-2xl border border-divider bg-surface p-8 text-center sm:p-12">
+//                   <div className="mx-auto flex h-14 w-14 items-center justify-center rounded-full border border-divider bg-card">
+//                     <Search className="h-6 w-6 text-primary" aria-hidden="true" />
+//                   </div>
+
+//                   <h2 className="mt-4 font-display text-3xl font-semibold text-text-dark">
+//                     No packages found
+//                   </h2>
+
+//                   <p className="mx-auto mt-2 max-w-md text-sm text-text">
+//                     {context.emptyMessage}
+//                   </p>
+
+//                   {hasActiveFilters && (
+//                     <button
+//                       type="button"
+//                       onClick={resetFilters}
+//                       className={`${PRIMARY_BUTTON} mt-5`}
+//                     >
+//                       Clear Filters
+//                       <X className="h-4 w-4" aria-hidden="true" />
+//                     </button>
+//                   )}
+//                 </div>
+//               )}
+
+//               {/* PACKAGES */}
+//               {!loading && filteredPackages.length > 0 && (
+//                 <RevealGroup className="grid grid-cols-1 gap-5 sm:grid-cols-2 sm:gap-6">
+//                   {filteredPackages.map((pkg) => (
+//                     <PackageCard key={pkg?.id ?? pkg?.slug} pkg={pkg} />
+//                   ))}
+//                 </RevealGroup>
+//               )}
+//             </div>
+//           </div>
+//         </section>
+//       </main>
+
+//       {/* ======================================================
+//           MOBILE FILTER DRAWER
+//           ====================================================== */}
+
+//       {mobileFiltersOpen && (
+//         <div
+//           className="fixed inset-0 z-[90] lg:hidden"
+//           role="dialog"
+//           aria-modal="true"
+//           aria-label="Filter packages"
+//         >
+//           <button
+//             type="button"
+//             aria-label="Close filters"
+//             onClick={() => setMobileFiltersOpen(false)}
+//             className="absolute inset-0 bg-ink-900/40"
+//           />
+
+//           <div className="absolute right-0 top-0 flex h-full w-[min(90vw,380px)] flex-col bg-card shadow-2xl">
+//             <div className="flex items-center justify-between gap-4 border-b border-divider px-5 py-4">
+//               <div className="flex items-center gap-2">
+//                 <Filter className="h-4 w-4 text-primary" aria-hidden="true" />
+//                 <h2 className="font-semibold text-text-dark">Filter Packages</h2>
+//               </div>
+
+//               <button
+//                 type="button"
+//                 onClick={() => setMobileFiltersOpen(false)}
+//                 className="flex h-9 w-9 items-center justify-center rounded-full bg-surface transition-colors hover:bg-surface-soft"
+//                 aria-label="Close filters"
+//               >
+//                 <X className="h-5 w-5 text-text-dark" aria-hidden="true" />
+//               </button>
+//             </div>
+
+//             <div className="flex-1 overflow-y-auto p-5">
+//               <Filters idPrefix="mobile" {...filterProps} />
+//             </div>
+
+//             <div className="border-t border-divider p-5">
+//               <button
+//                 type="button"
+//                 onClick={() => setMobileFiltersOpen(false)}
+//                 className="w-full rounded-xl bg-primary px-5 py-3.5 font-semibold text-white transition-colors hover:bg-primary-hover"
+//               >
+//                 Show {filteredPackages.length}{" "}
+//                 {filteredPackages.length === 1 ? "Package" : "Packages"}
+//               </button>
+//             </div>
+//           </div>
+//         </div>
+//       )}
+
+//       <FAQSection category="packages" />
+//       <Footer />
+//     </>
+//   );
+// }
+
+
+
 
 
 

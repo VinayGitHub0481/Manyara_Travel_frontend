@@ -1,9 +1,8 @@
-import React, {
-  useEffect,
-  useMemo,
-  useRef,
-  useState,
-} from "react";
+
+
+
+
+import { useEffect, useMemo, useRef, useState } from "react";
 import { Link, useParams } from "react-router-dom";
 import {
   ArrowLeft,
@@ -20,20 +19,20 @@ import {
 } from "lucide-react";
 
 import { getPackageBySlug } from "../../api/content";
+import { useQuery } from "../../hooks/useQuery";
 import Footer from "../../components/Footer";
-import Seo from "../../components/Seo";
+import Seo, { SITE_URL } from "../../components/Seo";
 import FAQSection from "../../components/FAQSection";
 import EnquiryForm from "../EnquiryForm";
 import ReviewFormModal from "../../components/ReviewFormModal";
 import generatePackagePDF from "../../components/PackageItineraryPDF";
-
-const SITE_URL =
-  import.meta.env.VITE_SITE_URL ||
-  "https://onatripholidays.com";
+import { RevealGroup } from "../../components/Reveal";
 
 /* =========================================================
-   PACKAGE TYPE LABELS
+   BRAND
 ========================================================= */
+
+const BRAND_NAME = "Manyara Prive Vacations";
 
 const PACKAGE_TYPE_LABELS = {
   pilgrimage: "Pilgrimage",
@@ -45,350 +44,309 @@ const PACKAGE_TYPE_LABELS = {
   wildlife_nature: "Wildlife & Nature",
 };
 
+/* Same button language as DestinationDetail */
+const PRIMARY_BUTTON =
+  "inline-flex items-center justify-center gap-2 rounded-xl bg-primary font-semibold text-white transition-colors hover:bg-primary-hover disabled:cursor-not-allowed disabled:opacity-70";
+
 /* =========================================================
-   IMAGE HELPER
+   HELPERS
+   (outside the component so they are stable and can be
+   used inside useMemo without dependency warnings)
 ========================================================= */
 
 const getImageUrl = (image) => {
   if (!image) return "";
+  if (typeof image === "string") return image.trim();
 
-  if (typeof image === "string") {
-    return image.trim();
-  }
-
-  if (typeof image === "object") {
-    return (
-      image.url ||
-      image.secure_url ||
-      image.src ||
-      image.image_url ||
-      ""
-    );
-  }
-
-  return "";
+  return image.url || image.secure_url || image.src || image.image_url || "";
 };
-
-/* =========================================================
-   TEXT HELPER
-========================================================= */
 
 const getTextValue = (item) => {
   if (!item) return "";
+  if (typeof item === "string") return item;
 
-  if (typeof item === "string") {
-    return item;
-  }
-
-  if (typeof item === "object") {
-    return (
-      item.name ||
-      item.title ||
-      item.description ||
-      item.text ||
-      item.value ||
-      ""
-    );
-  }
-
-  return "";
+  return (
+    item.name || item.title || item.description || item.text || item.value || ""
+  );
 };
 
-/* =========================================================
-   LIST HELPER
-========================================================= */
-
+/* Accepts an array, or a comma separated string */
 const getListItems = (value) => {
-  if (Array.isArray(value)) {
-    return value
-      .flatMap((item) => {
-        const text = getTextValue(item);
+  const items = Array.isArray(value) ? value.map(getTextValue) : [value];
 
-        if (typeof text !== "string") {
-          return [];
-        }
-
-        return text
-          .split(",")
-          .map((part) => part.trim())
-          .filter(Boolean);
-      })
-      .filter(Boolean);
-  }
-
-  if (typeof value === "string") {
-    return value
-      .split(",")
-      .map((item) => item.trim())
-      .filter(Boolean);
-  }
-
-  return [];
+  return items
+    .flatMap((item) => (typeof item === "string" ? item.split(",") : []))
+    .map((part) => part.trim())
+    .filter(Boolean);
 };
 
-/* =========================================================
-   DURATION
-========================================================= */
-
-const formatDuration = (days) => {
-  const numericDays = Number(days);
-
-  if (!numericDays || Number.isNaN(numericDays)) {
-    return "";
-  }
-
-  return `${numericDays} ${
-    numericDays === 1 ? "Day" : "Days"
-  }`;
-};
-
-/* =========================================================
-   PRICE
-========================================================= */
+const hasNumericPrice = (price) =>
+  price !== null &&
+  price !== undefined &&
+  price !== "" &&
+  !Number.isNaN(Number(price));
 
 const formatPrice = (price) => {
-  if (
-    price === null ||
-    price === undefined ||
-    price === ""
-  ) {
+  if (price === null || price === undefined || price === "") {
     return "Price on request";
   }
 
-  const numericPrice = Number(price);
+  const number = Number(price);
+  if (Number.isNaN(number)) return String(price);
 
-  if (Number.isNaN(numericPrice)) {
-    return String(price);
-  }
+  return `₹${number.toLocaleString("en-IN", { maximumFractionDigits: 2 })}`;
+};
 
-  return `₹${numericPrice.toLocaleString("en-IN", {
-    maximumFractionDigits: 2,
-  })}`;
+/* "5 Days / 4 nights" */
+const formatDuration = (days, nights) => {
+  const numericDays = Number(days);
+  if (!numericDays || Number.isNaN(numericDays)) return "";
+
+  const daysText = `${numericDays} ${numericDays === 1 ? "Day" : "Days"}`;
+
+  if (nights === undefined || nights === null) return daysText;
+
+  return `${daysText} / ${nights} ${Number(nights) === 1 ? "night" : "nights"}`;
 };
 
 /* =========================================================
-   COMPONENT
+   SMALL COMPONENTS
 ========================================================= */
 
-const PackageDetail = () => {
+function InfoCard({ icon, label, value }) {
+  return (
+    <div className="min-w-0 rounded-2xl border border-divider bg-surface p-5 sm:p-6">
+      <div className="mb-3 flex items-center gap-3">
+        <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-card text-primary sm:h-11 sm:w-11">
+          {icon}
+        </div>
+
+        <p className="text-xs text-muted sm:text-sm">{label}</p>
+      </div>
+
+      <p className="break-words text-base font-bold text-text-dark sm:text-lg">
+        {value}
+      </p>
+    </div>
+  );
+}
+
+function SidebarInfo({ icon, label, value }) {
+  return (
+    <div className="flex min-w-0 items-center gap-3">
+      <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-surface-soft text-primary">
+        {icon}
+      </div>
+
+      <div className="min-w-0">
+        <p className="text-xs text-muted">{label}</p>
+        <p className="break-words font-semibold text-text-dark">{value}</p>
+      </div>
+    </div>
+  );
+}
+
+function PolicyCard({ type, onClick }) {
+  const isTerms = type === "terms";
+  const Icon = isTerms ? FileText : ShieldCheck;
+
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      className="card-lift group w-full rounded-2xl border border-divider bg-card p-5 text-left transition-all duration-200 hover:border-primary hover:shadow-travel-card focus:outline-none focus:ring-2 focus:ring-primary focus:ring-offset-2 sm:p-6"
+    >
+      <div className="flex items-center gap-4">
+        <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-xl bg-surface-soft text-primary transition-colors group-hover:bg-primary group-hover:text-white">
+          <Icon className="h-6 w-6" aria-hidden="true" />
+        </div>
+
+        <div className="min-w-0 flex-1">
+          <h3 className="text-base font-bold text-text-dark sm:text-lg">
+            {isTerms ? "Terms & Conditions" : "Cancellation Policy"}
+          </h3>
+
+          <p className="mt-1 text-sm text-muted">
+            {isTerms
+              ? "View booking terms and important information"
+              : "View cancellation and refund information"}
+          </p>
+        </div>
+
+        <ChevronRight
+          className="arrow-shift h-5 w-5 shrink-0 text-muted transition-colors group-hover:text-primary"
+          aria-hidden="true"
+        />
+      </div>
+    </button>
+  );
+}
+
+/* Shown only on the very first visit, before anything is cached. */
+function DetailSkeleton() {
+  return (
+    <div
+      className="min-h-screen bg-background"
+      role="status"
+      aria-label="Loading package details"
+    >
+      <div className="mx-auto max-w-7xl animate-pulse px-4 py-10 sm:px-6 lg:px-8">
+        <div className="h-4 w-48 rounded bg-primary/10" />
+        <div className="mt-8 h-5 w-40 rounded bg-primary/10" />
+        <div className="mt-4 h-12 w-3/4 rounded bg-primary/10" />
+        <div className="mt-8 aspect-[4/3] rounded-3xl bg-primary/10 sm:aspect-[16/9] lg:aspect-[21/9]" />
+
+        <div className="mt-10 grid gap-10 lg:grid-cols-[minmax(0,1fr)_360px]">
+          <div className="space-y-4">
+            <div className="h-8 w-56 rounded bg-primary/10" />
+            <div className="h-4 rounded bg-primary/10" />
+            <div className="h-4 rounded bg-primary/10" />
+            <div className="h-4 w-2/3 rounded bg-primary/10" />
+          </div>
+          <div className="h-80 rounded-3xl bg-primary/10" />
+        </div>
+      </div>
+    </div>
+  );
+}
+
+/* Missing package (404) vs. a real loading problem */
+function StateMessage({ title, message, code, onRetry }) {
+  return (
+    <div className="min-h-[100dvh] bg-background">
+      <div className="mx-auto max-w-3xl px-4 py-20 text-center sm:px-6 sm:py-28">
+        {code && (
+          <p className="mb-3 font-display text-6xl font-semibold text-primary/30">
+            {code}
+          </p>
+        )}
+
+        <h1 className="mb-3 font-display text-3xl font-semibold text-text-dark sm:text-4xl">
+          {title}
+        </h1>
+
+        <p className="mx-auto mb-8 max-w-md text-text">{message}</p>
+
+        <div className="flex flex-col items-center justify-center gap-3 sm:flex-row">
+          {onRetry && (
+            <button
+              type="button"
+              onClick={onRetry}
+              className={`${PRIMARY_BUTTON} min-h-[44px] px-5 py-3`}
+            >
+              Try again
+            </button>
+          )}
+
+          <Link
+            to="/packages"
+            className="inline-flex min-h-[44px] items-center justify-center gap-2 rounded-xl border border-border px-5 py-3 font-semibold text-text-dark transition-colors hover:border-primary hover:bg-surface-soft hover:text-primary"
+          >
+            <ArrowLeft className="h-4 w-4" aria-hidden="true" />
+            Back to Packages
+          </Link>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+/* =========================================================
+   PAGE
+========================================================= */
+
+export default function PackageDetail() {
   const { slug } = useParams();
 
-  const [pkg, setPkg] = useState(null);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState("");
+  /* Cached data: instant on repeat visits, updates itself when fresh. */
+  const { data, loading, error } = useQuery(getPackageBySlug, slug);
+  const pkg = data?.data ?? data ?? null;
 
   const [showEnquiry, setShowEnquiry] = useState(false);
   const [showReview, setShowReview] = useState(false);
-
   const [activePolicy, setActivePolicy] = useState(null);
-
   const [downloadingPDF, setDownloadingPDF] = useState(false);
 
-  /* =========================================================
-     RESPONSIVE FLOATING DOWNLOAD
-  ========================================================= */
-
+  /* Floating "Download Itinerary" button (mobile + tablet) */
   const packageAreaRef = useRef(null);
   const faqSectionRef = useRef(null);
+  const [showFloatingDownload, setShowFloatingDownload] = useState(false);
 
-  const [showFloatingDownload, setShowFloatingDownload] =
-    useState(false);
-
-  /* =========================================================
-     FETCH PACKAGE
-  ========================================================= */
-
+  /* --------------------------------------------------
+     Floating button: visible while the package is on
+     screen, hidden near the FAQ and while a modal is open.
+  -------------------------------------------------- */
   useEffect(() => {
-    let mounted = true;
-
-    const fetchPackage = async () => {
-      if (!slug) {
-        setPkg(null);
-        setError("Package not found.");
-        setLoading(false);
-        return;
-      }
-
-      try {
-        setLoading(true);
-        setError("");
-
-        const response = await getPackageBySlug(slug);
-
-        if (!mounted) return;
-
-        const data = response?.data || response;
-
-        if (!data) {
-          setPkg(null);
-          setError("Package not found.");
-          return;
-        }
-
-        setPkg(data);
-      } catch (err) {
-        console.error(
-          "Failed to fetch package:",
-          err
-        );
-
-        if (!mounted) return;
-
-        setPkg(null);
-
-        setError(
-          err?.response?.data?.detail ||
-            err?.message ||
-            "Unable to load this package."
-        );
-      } finally {
-        if (mounted) {
-          setLoading(false);
-        }
-      }
-    };
-
-    fetchPackage();
-
-    return () => {
-      mounted = false;
-    };
-  }, [slug]);
-
-  /* =========================================================
-     FLOATING DOWNLOAD VISIBILITY
-  ========================================================= */
-
-  useEffect(() => {
-    if (loading || !pkg) {
-      setShowFloatingDownload(false);
-      return undefined;
-    }
-
     const packageElement = packageAreaRef.current;
     const faqElement = faqSectionRef.current;
 
-    if (!packageElement) {
+    if (loading || !pkg || !packageElement) {
+      setShowFloatingDownload(false);
       return undefined;
     }
 
     let packageVisible = false;
     let faqVisible = false;
 
-    const updateVisibility = () => {
+    const update = () =>
       setShowFloatingDownload(
-        packageVisible &&
-          !faqVisible &&
-          !showEnquiry &&
-          !showReview
+        packageVisible && !faqVisible && !showEnquiry && !showReview
       );
-    };
 
     const packageObserver = new IntersectionObserver(
       ([entry]) => {
         packageVisible = entry.isIntersecting;
-        updateVisibility();
+        update();
       },
-      {
-        threshold: 0.08,
-        rootMargin: "-10% 0px -15% 0px",
-      }
+      { threshold: 0.08, rootMargin: "-10% 0px -15% 0px" }
     );
 
     const faqObserver = faqElement
       ? new IntersectionObserver(
           ([entry]) => {
             faqVisible = entry.isIntersecting;
-            updateVisibility();
+            update();
           },
-          {
-            threshold: 0.05,
-            rootMargin: "0px 0px -10% 0px",
-          }
+          { threshold: 0.05, rootMargin: "0px 0px -10% 0px" }
         )
       : null;
 
     packageObserver.observe(packageElement);
-
-    if (faqObserver && faqElement) {
-      faqObserver.observe(faqElement);
-    }
+    if (faqObserver) faqObserver.observe(faqElement);
 
     return () => {
       packageObserver.disconnect();
-
-      if (faqObserver) {
-        faqObserver.disconnect();
-      }
+      if (faqObserver) faqObserver.disconnect();
     };
-  }, [
-    loading,
-    pkg,
-    showEnquiry,
-    showReview,
-  ]);
+  }, [loading, pkg, showEnquiry, showReview]);
 
-  /* =========================================================
-     CLOSE POLICY WITH ESC
-  ========================================================= */
-
+  /* Close the policy popup with Escape */
   useEffect(() => {
     if (!activePolicy) return undefined;
 
-    const handleEscape = (event) => {
-      if (event.key === "Escape") {
-        setActivePolicy(null);
-      }
+    const onKeyDown = (event) => {
+      if (event.key === "Escape") setActivePolicy(null);
     };
 
-    document.addEventListener(
-      "keydown",
-      handleEscape
-    );
-
-    return () => {
-      document.removeEventListener(
-        "keydown",
-        handleEscape
-      );
-    };
+    document.addEventListener("keydown", onKeyDown);
+    return () => document.removeEventListener("keydown", onKeyDown);
   }, [activePolicy]);
 
-  /* =========================================================
-     PACKAGE IMAGES
-  ========================================================= */
-
+  /* --------------------------------------------------
+     DERIVED CONTENT
+  -------------------------------------------------- */
   const packageImages = useMemo(() => {
-    if (!pkg?.images) {
-      return [];
-    }
+    if (!pkg?.images) return [];
 
-    if (Array.isArray(pkg.images)) {
-      return pkg.images
-        .map(getImageUrl)
-        .filter(Boolean);
-    }
-
-    const image = getImageUrl(pkg.images);
-
-    return image ? [image] : [];
+    const images = Array.isArray(pkg.images) ? pkg.images : [pkg.images];
+    return images.map(getImageUrl).filter(Boolean);
   }, [pkg]);
 
-  /* =========================================================
-     ITINERARY
-  ========================================================= */
-
   const itinerary = useMemo(() => {
-    if (!Array.isArray(pkg?.itinerary)) {
-      return [];
-    }
+    if (!Array.isArray(pkg?.itinerary)) return [];
 
     return [...pkg.itinerary]
-      .sort(
-        (a, b) =>
-          Number(a?.day || 0) -
-          Number(b?.day || 0)
-      )
+      .sort((a, b) => Number(a?.day || 0) - Number(b?.day || 0))
       .map((item, index) => ({
         ...item,
         day: item?.day || index + 1,
@@ -398,130 +356,108 @@ const PackageDetail = () => {
       }));
   }, [pkg]);
 
-  /* =========================================================
-     CONTENT
-  ========================================================= */
+  const facilities = useMemo(() => getListItems(pkg?.facilities), [pkg]);
+  const inclusions = useMemo(() => getListItems(pkg?.inclusions), [pkg]);
+  const exclusions = useMemo(() => getListItems(pkg?.exclusions), [pkg]);
 
-  const facilities = useMemo(
-    () => getListItems(pkg?.facilities),
-    [pkg]
-  );
+  const hasPrice = hasNumericPrice(pkg?.price);
+  const formattedPrice = formatPrice(pkg?.price);
 
-  const inclusions = useMemo(
-    () => getListItems(pkg?.inclusions),
-    [pkg]
-  );
-
-  const exclusions = useMemo(
-    () => getListItems(pkg?.exclusions),
-    [pkg]
-  );
-
-  /* =========================================================
-     PRICE / DURATION / TYPE
-  ========================================================= */
-
-  const formattedPrice = useMemo(
-    () => formatPrice(pkg?.price),
-    [pkg]
-  );
-
-  const formattedDuration = useMemo(
-    () => formatDuration(pkg?.duration_days),
-    [pkg]
-  );
+  const durationLabel = formatDuration(pkg?.duration_days, pkg?.duration_nights);
 
   const packageTypeLabel = useMemo(() => {
-    if (!pkg?.package_type) {
-      return "";
-    }
+    if (!pkg?.package_type) return "";
 
     return (
       PACKAGE_TYPE_LABELS[pkg.package_type] ||
       String(pkg.package_type)
         .replaceAll("_", " ")
-        .replace(/\b\w/g, (letter) =>
-          letter.toUpperCase()
-        )
+        .replace(/\b\w/g, (letter) => letter.toUpperCase())
     );
   }, [pkg]);
 
-  /* =========================================================
+  const itineraryDaysLabel = `${itinerary.length} ${
+    itinerary.length === 1 ? "Day" : "Days"
+  }`;
+
+  const coverImage = packageImages[0] || "";
+
+  /* --------------------------------------------------
      SEO
-  ========================================================= */
+  -------------------------------------------------- */
+  const seoDescription =
+    pkg?.description ||
+    `Explore ${
+      pkg?.title || "this holiday package"
+    } with ${BRAND_NAME}. View the itinerary, inclusions, duration and starting price.`;
 
-  const seoDescription = useMemo(() => {
-    if (!pkg) {
-      return "Explore holiday packages with On a Trip Holidays.";
-    }
+  const packagePath = `/packages/${encodeURIComponent(pkg?.slug || slug || "")}`;
+  const canonicalUrl = `${SITE_URL}${packagePath}`;
 
-    return (
-      pkg.description ||
-      `Explore ${
-        pkg.title || "this holiday package"
-      } with On a Trip Holidays.`
-    );
-  }, [pkg]);
-
-  const canonicalUrl =
-    `${SITE_URL}/packages/${slug}`;
-
+  /* --------------------------------------------------
+     JSON-LD
+  -------------------------------------------------- */
   const jsonLd = useMemo(() => {
-    if (!pkg) {
-      return null;
-    }
+    if (!pkg) return null;
 
-    const image =
-      packageImages.length > 0
-        ? packageImages[0]
-        : undefined;
+    return [
+      {
+        "@context": "https://schema.org",
+        "@type": "TouristTrip",
+        name: pkg.title,
+        description: seoDescription,
+        url: canonicalUrl,
+        provider: { "@type": "TravelAgency", name: BRAND_NAME },
+        touristType: [
+          "Leisure travelers",
+          "Families",
+          "Couples",
+          "Adventure travelers",
+        ],
+        ...(coverImage ? { image: [coverImage] } : {}),
+        ...(hasPrice
+          ? {
+              offers: {
+                "@type": "Offer",
+                price: Number(pkg.price),
+                priceCurrency: "INR",
+                availability: "https://schema.org/InStock",
+                url: canonicalUrl,
+              },
+            }
+          : {}),
+      },
 
-    return {
-      "@context": "https://schema.org",
-      "@type": "TouristTrip",
-      name: pkg.title,
-      description: seoDescription,
-      url: canonicalUrl,
+      {
+        "@context": "https://schema.org",
+        "@type": "BreadcrumbList",
+        itemListElement: [
+          {
+            "@type": "ListItem",
+            position: 1,
+            name: "Home",
+            item: SITE_URL,
+          },
+          {
+            "@type": "ListItem",
+            position: 2,
+            name: "Packages",
+            item: `${SITE_URL}/packages`,
+          },
+          {
+            "@type": "ListItem",
+            position: 3,
+            name: pkg.title,
+            item: canonicalUrl,
+          },
+        ],
+      },
+    ];
+  }, [pkg, coverImage, seoDescription, canonicalUrl, hasPrice]);
 
-      ...(image
-        ? {
-            image: [image],
-          }
-        : {}),
-
-      touristType: [
-        "Leisure travelers",
-        "Families",
-        "Couples",
-        "Adventure travelers",
-      ],
-
-      ...(pkg.price !== null &&
-      pkg.price !== undefined &&
-      pkg.price !== ""
-        ? {
-            offers: {
-              "@type": "Offer",
-              price: Number(pkg.price),
-              priceCurrency: "INR",
-              availability:
-                "https://schema.org/InStock",
-              url: canonicalUrl,
-            },
-          }
-        : {}),
-    };
-  }, [
-    pkg,
-    packageImages,
-    seoDescription,
-    canonicalUrl,
-  ]);
-
-  /* =========================================================
+  /* --------------------------------------------------
      ACTIONS
-  ========================================================= */
-
+  -------------------------------------------------- */
   const openDownloadForm = () => {
     setShowEnquiry(true);
     setShowFloatingDownload(false);
@@ -532,1005 +468,1765 @@ const PackageDetail = () => {
     setShowFloatingDownload(false);
   };
 
-  const closeReview = () => {
-    setShowReview(false);
-  };
-
-  /* =========================================================
-     PDF DOWNLOAD
-  ========================================================= */
-
   const handleDownloadPackagePDF = async () => {
-    if (!pkg || downloadingPDF) {
-      return;
-    }
+    if (!pkg || downloadingPDF) return;
 
     try {
       setDownloadingPDF(true);
-
       await generatePackagePDF(pkg);
     } catch (pdfError) {
-      console.error(
-        "Package PDF generation failed:",
-        pdfError
-      );
-
-      window.alert(
-        "Unable to generate the itinerary PDF. Please try again."
-      );
+      console.error("Package PDF generation failed:", pdfError);
+      window.alert("Unable to generate the itinerary PDF. Please try again.");
     } finally {
       setDownloadingPDF(false);
     }
   };
 
-  /* =========================================================
-     ENQUIRY SUCCESS -> PDF DOWNLOAD
+  /* Download Itinerary -> enquiry form -> enquiry saved -> onSuccess -> PDF.
+     EnquiryForm gets downloadItinerary={false} so the PDF is not made twice. */
+  const handleEnquirySuccess = () => handleDownloadPackagePDF();
 
-     EnquiryForm calls onSuccess only after the enquiry API
-     request succeeds:
-
-       click Download Itinerary
-       -> enquiry form
-       -> submit enquiry
-       -> successful API response
-       -> onSuccess()
-       -> package itinerary PDF download
-  ========================================================= */
-
-  const handleEnquirySuccess = async () => {
-    await handleDownloadPackagePDF();
-  };
-
-  /* =========================================================
-     LOADING
-  ========================================================= */
-
+  /* --------------------------------------------------
+     STATES
+  -------------------------------------------------- */
   if (loading) {
-    return (
-      <div className="min-h-screen bg-white flex items-center justify-center px-4">
-        <div className="text-center">
-          <div className="w-10 h-10 border-4 border-gray-200 border-t-[#061B45] rounded-full animate-spin mx-auto mb-4" />
+    return <DetailSkeleton />;
+  }
 
-          <p className="text-gray-600 text-sm sm:text-base">
-            Loading package details...
-          </p>
-        </div>
-      </div>
+  if (!pkg) {
+    const status = error?.response?.status;
+    const isRealError = Boolean(error) && status !== 404;
+
+    if (isRealError) {
+      console.error("Failed to load package:", slug, error);
+
+      return (
+        <StateMessage
+          title="We couldn't load this package"
+          message="Something went wrong while loading this page. Please check your connection and try again."
+          onRetry={() => window.location.reload()}
+        />
+      );
+    }
+
+    return (
+      <StateMessage
+        code="404"
+        title="Package not found"
+        message="The package you are looking for may have been removed or is no longer available."
+      />
     );
   }
 
-  /* =========================================================
-     NOT FOUND
-  ========================================================= */
+  /* --------------------------------------------------
+     MAIN
 
-  if (error || !pkg) {
-    return (
-      <div className="min-h-screen bg-white">
-        <div className="max-w-3xl mx-auto px-4 sm:px-6 py-20 sm:py-28 text-center">
-          <div className="w-16 h-16 mx-auto mb-6 rounded-full bg-gray-100 flex items-center justify-center">
-            <FileText className="w-8 h-8 text-gray-500" />
-          </div>
-
-          <h1 className="text-2xl sm:text-3xl font-bold text-[#061B45] mb-3">
-            Package Not Found
-          </h1>
-
-          <p className="text-gray-600 mb-8">
-            {error ||
-              "The package you are looking for does not exist."}
-          </p>
-
-          <Link
-            to="/packages"
-            className="inline-flex items-center gap-2 px-5 py-3 rounded-xl bg-[#061B45] text-white font-semibold hover:bg-[#0B2559] transition"
-          >
-            <ArrowLeft className="w-4 h-4" />
-            Back to Packages
-          </Link>
-        </div>
-      </div>
-    );
-  }
-
-  /* =========================================================
-     PAGE
-  ========================================================= */
-
+     NOTE (sticky sidebar): the page wrapper uses
+     overflow-x-clip, NOT overflow-x-hidden.
+     overflow-x-hidden turns the wrapper into a scroll
+     container, which silently breaks position: sticky on
+     the sidebar.
+  -------------------------------------------------- */
   return (
-    <>
+    <div className="min-h-screen overflow-x-clip bg-background">
+      {/* ==================================================
+          SEO
+      ================================================== */}
       <Seo
-        title={`${pkg.title} | On a Trip Holidays`}
+        title={`${pkg.title} | ${BRAND_NAME}`}
         description={seoDescription}
         canonical={canonicalUrl}
-        image={packageImages[0]}
+        path={packagePath}
+        image={coverImage}
+        type="website"
         jsonLd={jsonLd}
       />
 
-      <div className="min-h-screen bg-white overflow-x-clip">
-        {/* =====================================================
-            BREADCRUMB
-        ====================================================== */}
+      {/* ==================================================
+          BREADCRUMB
+      ================================================== */}
+      <section className="border-b border-divider bg-surface">
+        <div className="mx-auto w-full max-w-7xl px-4 sm:px-6 lg:px-8">
+          <nav
+            aria-label="Breadcrumb"
+            className="flex items-center gap-1.5 overflow-hidden py-3 text-xs text-muted sm:gap-2 sm:py-4 sm:text-sm"
+          >
+            <Link to="/" className="shrink-0 transition hover:text-primary">
+              Home
+            </Link>
 
-        <section className="border-b border-gray-100 bg-gray-50">
-          <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-4">
-            <nav className="flex items-center gap-2 text-sm text-gray-500 flex-wrap">
-              <Link
-                to="/"
-                className="hover:text-[#061B45] transition"
-              >
-                Home
-              </Link>
+            <ChevronRight
+              className="h-3.5 w-3.5 shrink-0"
+              aria-hidden="true"
+            />
 
-              <ChevronRight className="w-4 h-4 shrink-0" />
+            <Link
+              to="/packages"
+              className="shrink-0 transition hover:text-primary"
+            >
+              Packages
+            </Link>
 
-              <Link
-                to="/packages"
-                className="hover:text-[#061B45] transition"
-              >
-                Packages
-              </Link>
+            <ChevronRight
+              className="h-3.5 w-3.5 shrink-0"
+              aria-hidden="true"
+            />
 
-              <ChevronRight className="w-4 h-4 shrink-0" />
+            <span className="truncate font-medium text-text-dark">
+              {pkg.title}
+            </span>
+          </nav>
+        </div>
+      </section>
 
-              <span className="text-gray-800 font-medium truncate max-w-[220px] sm:max-w-none">
-                {pkg.title}
+      {/* ==================================================
+          MAIN CONTENT
+      ================================================== */}
+      <main
+        ref={packageAreaRef}
+        className="mx-auto w-full max-w-7xl px-4 py-3 sm:px-6 sm:py-5 lg:px-8 lg:py-6"
+      >
+        {/* BACK */}
+        <Link
+          to="/packages"
+          className="group mb-3 inline-flex items-center gap-2 text-sm font-semibold text-primary transition hover:text-primary-hover"
+        >
+          <ArrowLeft
+            className="h-4 w-4 transition-transform duration-300 group-hover:-translate-x-0.5"
+            aria-hidden="true"
+          />
+          Back to Packages
+        </Link>
+
+        {/* ==================================================
+            PACKAGE HEADER
+        ================================================== */}
+        <section className="mb-6 sm:mb-8 lg:mb-10">
+          <div className="mb-2 flex flex-wrap items-center gap-x-3 gap-y-2 sm:mb-3">
+            {pkg.destination && (
+              <div className="flex min-w-0 items-center gap-2 text-sm font-semibold text-primary sm:text-base">
+                <MapPin
+                  className="h-[18px] w-[18px] shrink-0"
+                  aria-hidden="true"
+                />
+                <span className="truncate">{pkg.destination}</span>
+              </div>
+            )}
+
+            {packageTypeLabel && (
+              <span className="inline-flex items-center rounded-full bg-surface-soft px-3 py-1.5 text-xs font-semibold text-primary-dark sm:text-sm">
+                {packageTypeLabel}
               </span>
-            </nav>
+            )}
+          </div>
+
+          <h1 className="break-words font-display text-4xl font-semibold leading-tight tracking-tight text-text-display sm:text-5xl lg:text-6xl">
+            {pkg.title}
+          </h1>
+
+          {durationLabel && (
+            <div className="mt-3 inline-flex items-center gap-2 text-sm text-text-secondary sm:mt-4 sm:text-base lg:text-lg">
+              <Clock className="h-5 w-5 text-primary" aria-hidden="true" />
+              <span>{durationLabel}</span>
+            </div>
+          )}
+        </section>
+
+        {/* ==================================================
+            HERO IMAGE
+        ================================================== */}
+        <section className="mb-8 sm:mb-10 lg:mb-14">
+          <div className="relative aspect-[4/3] w-full overflow-hidden rounded-2xl bg-surface-strong shadow-travel-card sm:aspect-[16/9] sm:rounded-3xl lg:aspect-[21/9]">
+            {coverImage ? (
+              <>
+                <img
+                  src={coverImage}
+                  alt={pkg.title}
+                  className="h-full w-full object-cover"
+                  fetchPriority="high"
+                  decoding="async"
+                  width="1400"
+                  height="600"
+                />
+
+                <div className="pointer-events-none absolute inset-0 bg-gradient-to-t from-ink-900/65 via-ink-900/5 to-transparent" />
+
+                <div className="absolute bottom-0 left-0 right-0 p-5 sm:p-7 lg:p-10">
+                  {pkg.destination && (
+                    <div className="flex items-center gap-2 text-sm font-medium text-white/90 sm:text-base">
+                      <MapPin
+                        className="h-[18px] w-[18px] text-accent-bright"
+                        aria-hidden="true"
+                      />
+                      <span>{pkg.destination}</span>
+                    </div>
+                  )}
+
+                  <p className="mt-1 font-display text-2xl font-semibold text-white sm:text-3xl lg:text-4xl">
+                    Your journey starts here
+                  </p>
+                </div>
+              </>
+            ) : (
+              <div className="flex h-full w-full items-center justify-center bg-surface-soft">
+                <MapPin
+                  className="h-12 w-12 text-placeholder"
+                  aria-hidden="true"
+                />
+              </div>
+            )}
           </div>
         </section>
 
-        {/* =====================================================
-            PACKAGE CONTENT AREA
-        ====================================================== */}
-
-        <main
-          ref={packageAreaRef}
-          className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8"
-        >
-          {/* BACK */}
-
-          <div className="pt-6 sm:pt-8">
-            <Link
-              to="/packages"
-              className="inline-flex items-center gap-2 text-sm font-semibold text-[#061B45] hover:text-[#FF3B0B] transition"
-            >
-              <ArrowLeft className="w-4 h-4" />
-              Back to Packages
-            </Link>
-          </div>
-
-          {/* =================================================
-              TITLE
+        {/* ==================================================
+            CONTENT + SIDEBAR
+            items-start + self-start keep the sidebar able to stick.
+            Sticky starts at lg; below that it flows normally.
+        ================================================== */}
+        <div className="grid grid-cols-1 items-start gap-8 pb-16 sm:pb-20 lg:grid-cols-[minmax(0,1fr)_360px] lg:gap-12 xl:gap-14">
+          {/* ==================================================
+              LEFT CONTENT
           ================================================== */}
-
-          <section className="pt-5 sm:pt-7 pb-6">
-            <div className="flex flex-wrap items-center gap-2 mb-4">
-              {pkg.destination && (
-                <div className="inline-flex items-center gap-2 text-gray-700">
-                  <MapPin className="w-5 h-5 text-[#FF3B0B]" />
-                  <span>{pkg.destination}</span>
-                </div>
-              )}
-
-              {packageTypeLabel && (
-                <>
-                  <span className="text-gray-300">
-                    •
-                  </span>
-
-                  <span className="inline-flex items-center rounded-full bg-[#061B45]/5 text-[#061B45] px-3 py-1.5 text-xs sm:text-sm font-semibold">
-                    {packageTypeLabel}
-                  </span>
-                </>
-              )}
-            </div>
-
-            <h1 className="text-3xl sm:text-4xl lg:text-5xl font-extrabold tracking-tight text-[#061B45] leading-tight">
-              {pkg.title}
-            </h1>
-
-            <div className="mt-5 flex flex-wrap gap-x-6 gap-y-3 text-sm sm:text-base text-gray-600">
-              {formattedDuration && (
-                <div className="inline-flex items-center gap-2">
-                  <Clock className="w-5 h-5 text-[#FF3B0B]" />
-
-                  <span>
-                    {formattedDuration}
-
-                    {pkg?.duration_nights !==
-                      undefined &&
-                      ` / ${pkg.duration_nights} ${
-                        Number(
-                          pkg.duration_nights
-                        ) === 1
-                          ? "night"
-                          : "nights"
-                      }`}
-                  </span>
-                </div>
-              )}
-            </div>
-          </section>
-
-          {/* =================================================
-              COVER IMAGE
-          ================================================== */}
-
-          <section className="pb-8 sm:pb-10">
-            {packageImages.length > 0 ? (
-              <div className="w-full aspect-[16/9] sm:aspect-[21/9] lg:aspect-[2.4/1] rounded-2xl sm:rounded-3xl overflow-hidden bg-gray-100">
-                <img
-                  src={packageImages[0]}
-                  alt={pkg.title}
-                  className="w-full h-full object-cover"
-                  loading="eager"
-                  decoding="async"
-                />
-              </div>
-            ) : (
-              <div className="w-full aspect-[16/9] sm:aspect-[21/9] lg:aspect-[2.4/1] rounded-2xl sm:rounded-3xl bg-gray-100 flex items-center justify-center">
-                <MapPin className="w-12 h-12 text-gray-400" />
-              </div>
-            )}
-          </section>
-
-          {/* =================================================
-              DESCRIPTION
-          ================================================== */}
-
-          {pkg.description && (
-            <section className="pb-10 sm:pb-12">
-              <h2 className="text-2xl sm:text-3xl font-bold text-[#061B45] mb-4">
-                About This Package
-              </h2>
-
-              <p className="text-gray-600 leading-7 sm:leading-8 text-sm sm:text-base whitespace-pre-line">
-                {pkg.description}
-              </p>
-            </section>
-          )}
-
-          {/* =================================================
-              TWO COLUMN CONTENT
-          ================================================== */}
-
-          <div className="grid grid-cols-1 lg:grid-cols-[minmax(0,1fr)_360px] gap-8 lg:gap-12 xl:gap-14 items-start pb-16 sm:pb-20">
-            {/* =================================================
-                LEFT
-            ================================================== */}
-
-            <div className="min-w-0">
-              {/* PACKAGE INFORMATION */}
-
-              <section className="mb-10 sm:mb-12">
-                <h2 className="text-2xl sm:text-3xl font-bold text-[#061B45] mb-5">
-                  Package Information
+          <div className="min-w-0 space-y-10 sm:space-y-12 lg:space-y-14">
+            {/* ABOUT */}
+            {pkg.description && (
+              <section>
+                <h2 className="mb-4 font-display text-3xl font-semibold text-text-dark sm:mb-5">
+                  About This Package
                 </h2>
 
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                  {formattedDuration && (
-                    <InfoCard
-                      icon={
-                        <CalendarDays className="w-5 h-5 text-[#FF3B0B]" />
-                      }
-                      label="Duration"
-                      value={
-                        <>
-                          {formattedDuration}
-
-                          {pkg?.duration_nights !==
-                            undefined &&
-                            ` / ${pkg.duration_nights} ${
-                              Number(
-                                pkg.duration_nights
-                              ) === 1
-                                ? "night"
-                                : "nights"
-                            }`}
-                        </>
-                      }
-                    />
-                  )}
-
-                  {pkg.destination && (
-                    <InfoCard
-                      icon={
-                        <MapPin className="w-5 h-5 text-[#FF3B0B]" />
-                      }
-                      label="Destination"
-                      value={pkg.destination}
-                    />
-                  )}
-
-                  {packageTypeLabel && (
-                    <InfoCard
-                      icon={
-                        <MapPin className="w-5 h-5 text-[#061B45]" />
-                      }
-                      label="Package Type"
-                      value={packageTypeLabel}
-                    />
-                  )}
-
-                  <InfoCard
-                    icon={
-                      <Clock className="w-5 h-5 text-[#FF3B0B]" />
-                    }
-                    label="Starting From"
-                    value={formattedPrice}
-                  />
+                <div className="whitespace-pre-line break-words text-sm leading-7 text-text sm:text-base sm:leading-8 lg:text-lg">
+                  {pkg.description}
                 </div>
               </section>
+            )}
 
-              {/* =================================================
-                  ITINERARY
-              ================================================== */}
+            {/* PACKAGE INFORMATION */}
+            <section>
+              <h2 className="mb-5 font-display text-3xl font-semibold text-text-dark sm:mb-6">
+                Package Information
+              </h2>
 
-              {itinerary.length > 0 && (
-                <section className="mb-10 sm:mb-12">
-                  <div className="flex items-center justify-between gap-4 mb-6">
-                    <h2 className="text-2xl sm:text-3xl font-bold text-[#061B45]">
-                      Itinerary
-                    </h2>
+              <RevealGroup className="grid grid-cols-1 gap-4 sm:grid-cols-2 sm:gap-5">
+                {durationLabel && (
+                  <InfoCard
+                    icon={
+                      <CalendarDays className="h-5 w-5" aria-hidden="true" />
+                    }
+                    label="Duration"
+                    value={durationLabel}
+                  />
+                )}
 
-                    <span className="text-sm text-gray-500">
-                      {itinerary.length}{" "}
-                      {itinerary.length === 1
-                        ? "Day"
-                        : "Days"}
-                    </span>
-                  </div>
+                {pkg.destination && (
+                  <InfoCard
+                    icon={<MapPin className="h-5 w-5" aria-hidden="true" />}
+                    label="Destination"
+                    value={pkg.destination}
+                  />
+                )}
 
-                  <div className="space-y-5 sm:space-y-6">
-                    {itinerary.map(
-                      (item, index) => (
-                        <article
-                          key={`${item.day}-${index}`}
-                          className="border border-gray-200 rounded-2xl sm:rounded-3xl overflow-hidden bg-white shadow-sm"
-                        >
-                          <div className="px-5 sm:px-6 pt-5 sm:pt-6">
-                            <span className="inline-flex items-center rounded-full bg-[#061B45] text-white px-3 py-1.5 text-xs sm:text-sm font-bold">
-                              Day {item.day}
-                            </span>
-                          </div>
+                {packageTypeLabel && (
+                  <InfoCard
+                    icon={<MapPin className="h-5 w-5" aria-hidden="true" />}
+                    label="Package Type"
+                    value={packageTypeLabel}
+                  />
+                )}
 
-                          {item.title && (
-                            <div className="px-5 sm:px-6 pt-3">
-                              <h3 className="text-xl sm:text-2xl font-bold text-[#061B45]">
-                                {item.title}
-                              </h3>
-                            </div>
-                          )}
+                <InfoCard
+                  icon={<Clock className="h-5 w-5" aria-hidden="true" />}
+                  label="Starting From"
+                  value={formattedPrice}
+                />
+              </RevealGroup>
+            </section>
 
-                          {item.image && (
-                            <div className="mt-5 aspect-[16/9] sm:aspect-[2/1] overflow-hidden bg-gray-100">
-                              <img
-                                src={item.image}
-                                alt={`${pkg.title} - Day ${item.day}`}
-                                className="w-full h-full object-cover"
-                                loading="lazy"
-                                decoding="async"
-                              />
-                            </div>
-                          )}
-
-                          {item.description && (
-                            <div className="p-5 sm:p-6">
-                              <p className="text-gray-600 leading-7 text-sm sm:text-base whitespace-pre-line">
-                                {item.description}
-                              </p>
-                            </div>
-                          )}
-                        </article>
-                      )
-                    )}
-                  </div>
-                </section>
-              )}
-
-              {/* =================================================
-                  FACILITIES
-              ================================================== */}
-
-              {facilities.length > 0 && (
-                <section className="mb-10 sm:mb-12">
-                  <h2 className="text-2xl sm:text-3xl font-bold text-[#061B45] mb-5">
-                    Facilities
+            {/* ITINERARY */}
+            {itinerary.length > 0 && (
+              <section id="itinerary">
+                <div className="mb-5 flex items-end justify-between gap-4 sm:mb-6">
+                  <h2 className="font-display text-3xl font-semibold text-text-dark">
+                    Itinerary
                   </h2>
 
-                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                    {facilities.map(
-                      (facility, index) => (
-                        <div
-                          key={`${facility}-${index}`}
-                          className="flex items-start gap-3 rounded-xl border border-gray-200 p-4"
-                        >
-                          <div className="w-7 h-7 rounded-full bg-green-50 flex items-center justify-center shrink-0">
-                            <Check className="w-4 h-4 text-green-600" />
-                          </div>
+                  <span className="text-sm text-muted">{itineraryDaysLabel}</span>
+                </div>
 
-                          <span className="text-gray-700 text-sm sm:text-base">
-                            {facility}
-                          </span>
-                        </div>
-                      )
-                    )}
-                  </div>
-                </section>
-              )}
-
-              {/* =================================================
-                  INCLUSIONS / EXCLUSIONS
-              ================================================== */}
-
-              {(inclusions.length > 0 ||
-                exclusions.length > 0) && (
-                <section className="mb-10 sm:mb-12">
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                    {inclusions.length > 0 && (
-                      <div className="rounded-2xl border border-green-200 bg-green-50/50 p-5 sm:p-6">
-                        <h2 className="text-xl sm:text-2xl font-bold text-[#061B45] mb-5">
-                          Inclusions
-                        </h2>
-
-                        <ul className="space-y-3">
-                          {inclusions.map(
-                            (item, index) => (
-                              <li
-                                key={`${item}-${index}`}
-                                className="flex items-start gap-3 text-sm sm:text-base text-gray-700"
-                              >
-                                <Check className="w-5 h-5 text-green-600 shrink-0 mt-0.5" />
-
-                                <span>
-                                  {item}
-                                </span>
-                              </li>
-                            )
-                          )}
-                        </ul>
-                      </div>
-                    )}
-
-                    {exclusions.length > 0 && (
-                      <div className="rounded-2xl border border-red-200 bg-red-50/40 p-5 sm:p-6">
-                        <h2 className="text-xl sm:text-2xl font-bold text-[#061B45] mb-5">
-                          Exclusions
-                        </h2>
-
-                        <ul className="space-y-3">
-                          {exclusions.map(
-                            (item, index) => (
-                              <li
-                                key={`${item}-${index}`}
-                                className="flex items-start gap-3 text-sm sm:text-base text-gray-700"
-                              >
-                                <X className="w-5 h-5 text-red-500 shrink-0 mt-0.5" />
-
-                                <span>
-                                  {item}
-                                </span>
-                              </li>
-                            )
-                          )}
-                        </ul>
-                      </div>
-                    )}
-                  </div>
-                </section>
-              )}
-
-              {/* =================================================
-                  TERMS & CANCELLATION BOXES
-              ================================================== */}
-
-              {(pkg.terms_and_conditions ||
-                pkg.cancellation_policy) && (
-                <section className="mb-10 sm:mb-12">
-                  <h2 className="text-2xl sm:text-3xl font-bold text-[#061B45] mb-5">
-                    Important Information
-                  </h2>
-
-                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                    {pkg.terms_and_conditions && (
-                      <PolicyCard
-                        type="terms"
-                        onClick={() =>
-                          setActivePolicy("terms")
-                        }
-                      />
-                    )}
-
-                    {pkg.cancellation_policy && (
-                      <PolicyCard
-                        type="cancellation"
-                        onClick={() =>
-                          setActivePolicy(
-                            "cancellation"
-                          )
-                        }
-                      />
-                    )}
-                  </div>
-                </section>
-              )}
-            </div>
-
-            {/* =================================================
-                RIGHT SIDEBAR
-            ================================================== */}
-
-            <aside className="w-full lg:sticky lg:top-24 self-start">
-              <div className="border border-gray-200 rounded-2xl sm:rounded-3xl p-5 sm:p-6 lg:p-7 shadow-lg bg-white">
-                {/* PRICE */}
-
-                <div className="pb-5 border-b border-gray-200">
-                  <p className="text-sm text-gray-500 mb-1">
-                    Starting from
-                  </p>
-
-                  <div className="flex items-end gap-2 flex-wrap">
-                    <span className="text-3xl sm:text-4xl font-extrabold text-[#061B45]">
-                      {formattedPrice}
-                    </span>
-
-                    {pkg.price !== null &&
-                      pkg.price !== undefined &&
-                      pkg.price !== "" && (
-                        <span className="text-sm text-gray-500 pb-1">
-                          / person
+                <RevealGroup className="space-y-5 sm:space-y-6">
+                  {itinerary.map((item, index) => (
+                    <article
+                      key={`${item.day}-${index}`}
+                      className="overflow-hidden rounded-2xl border border-divider bg-card shadow-travel-card sm:rounded-3xl"
+                    >
+                      <div className="px-5 pt-5 sm:px-6 sm:pt-6">
+                        <span className="inline-flex items-center rounded-full bg-primary px-3 py-1.5 text-xs font-bold text-white sm:text-sm">
+                          Day {item.day}
                         </span>
+                      </div>
+
+                      {item.title && (
+                        <div className="px-5 pt-3 sm:px-6">
+                          <h3 className="font-display text-2xl font-semibold text-text-dark">
+                            {item.title}
+                          </h3>
+                        </div>
                       )}
-                  </div>
+
+                      {item.image && (
+                        <div className="img-zoom mt-5 aspect-[16/9] overflow-hidden bg-surface-strong sm:aspect-[2/1]">
+                          <img
+                            src={item.image}
+                            alt={`${pkg.title} - Day ${item.day}`}
+                            className="h-full w-full object-cover"
+                            loading="lazy"
+                            decoding="async"
+                            width="1200"
+                            height="600"
+                          />
+                        </div>
+                      )}
+
+                      {item.description && (
+                        <div className="p-5 sm:p-6">
+                          <p className="whitespace-pre-line break-words text-sm leading-7 text-text sm:text-base">
+                            {item.description}
+                          </p>
+                        </div>
+                      )}
+                    </article>
+                  ))}
+                </RevealGroup>
+              </section>
+            )}
+
+            {/* FACILITIES */}
+            {facilities.length > 0 && (
+              <section>
+                <h2 className="mb-5 font-display text-3xl font-semibold text-text-dark sm:mb-6">
+                  Facilities
+                </h2>
+
+                <RevealGroup className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+                  {facilities.map((facility, index) => (
+                    <div
+                      key={`${facility}-${index}`}
+                      className="flex items-start gap-3 rounded-xl border border-divider bg-card p-4"
+                    >
+                      <div className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-success-bg text-success">
+                        <Check className="h-4 w-4" aria-hidden="true" />
+                      </div>
+
+                      <span className="text-sm text-text sm:text-base">
+                        {facility}
+                      </span>
+                    </div>
+                  ))}
+                </RevealGroup>
+              </section>
+            )}
+
+            {/* INCLUSIONS / EXCLUSIONS */}
+            {(inclusions.length > 0 || exclusions.length > 0) && (
+              <section>
+                <RevealGroup className="grid grid-cols-1 gap-6 md:grid-cols-2">
+                  {inclusions.length > 0 && (
+                    <div className="rounded-2xl border border-success/30 bg-success-bg/50 p-5 sm:p-6">
+                      <h2 className="mb-5 font-display text-2xl font-semibold text-text-dark">
+                        Inclusions
+                      </h2>
+
+                      <ul className="space-y-3">
+                        {inclusions.map((item, index) => (
+                          <li
+                            key={`${item}-${index}`}
+                            className="flex items-start gap-3 text-sm text-text sm:text-base"
+                          >
+                            <Check
+                              className="mt-0.5 h-5 w-5 shrink-0 text-success"
+                              aria-hidden="true"
+                            />
+                            <span className="min-w-0 break-words">{item}</span>
+                          </li>
+                        ))}
+                      </ul>
+                    </div>
+                  )}
+
+                  {exclusions.length > 0 && (
+                    <div className="rounded-2xl border border-error/30 bg-error-bg/50 p-5 sm:p-6">
+                      <h2 className="mb-5 font-display text-2xl font-semibold text-text-dark">
+                        Exclusions
+                      </h2>
+
+                      <ul className="space-y-3">
+                        {exclusions.map((item, index) => (
+                          <li
+                            key={`${item}-${index}`}
+                            className="flex items-start gap-3 text-sm text-text sm:text-base"
+                          >
+                            <X
+                              className="mt-0.5 h-5 w-5 shrink-0 text-error"
+                              aria-hidden="true"
+                            />
+                            <span className="min-w-0 break-words">{item}</span>
+                          </li>
+                        ))}
+                      </ul>
+                    </div>
+                  )}
+                </RevealGroup>
+              </section>
+            )}
+
+            {/* TERMS & CANCELLATION */}
+            {(pkg.terms_and_conditions || pkg.cancellation_policy) && (
+              <section>
+                <h2 className="mb-5 font-display text-3xl font-semibold text-text-dark sm:mb-6">
+                  Important Information
+                </h2>
+
+                <RevealGroup className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+                  {pkg.terms_and_conditions && (
+                    <PolicyCard
+                      type="terms"
+                      onClick={() => setActivePolicy("terms")}
+                    />
+                  )}
+
+                  {pkg.cancellation_policy && (
+                    <PolicyCard
+                      type="cancellation"
+                      onClick={() => setActivePolicy("cancellation")}
+                    />
+                  )}
+                </RevealGroup>
+              </section>
+            )}
+          </div>
+
+          {/* ==================================================
+              RIGHT SIDEBAR
+              Sticky ONLY on desktop (lg+). Offset follows the fixed
+              header, same as DestinationDetail.
+          ================================================== */}
+          <aside className="w-full self-start lg:sticky lg:top-[calc(var(--top-info-height,0px)+6rem)]">
+            <div className="rounded-2xl border border-divider bg-card p-5 shadow-travel-card sm:rounded-3xl sm:p-6 lg:p-7">
+              {/* PRICE (light brand gradient, not a dark block) */}
+              <div className="relative mb-5 overflow-hidden rounded-2xl border border-primary/10 bg-brand-gradient p-5 sm:p-6">
+                <p className="mb-1 text-xs font-semibold uppercase tracking-wider text-primary">
+                  Starting from
+                </p>
+
+                <div className="flex flex-wrap items-end gap-2">
+                  <span className="font-display text-4xl font-semibold leading-none text-text-dark">
+                    {formattedPrice}
+                  </span>
+
+                  {hasPrice && (
+                    <span className="pb-0.5 text-sm text-text-secondary">
+                      / person
+                    </span>
+                  )}
                 </div>
+              </div>
 
-                {/* SUMMARY */}
+              {/* SUMMARY */}
+              <div className="space-y-4 pb-5">
+                {durationLabel && (
+                  <SidebarInfo
+                    icon={<Clock className="h-5 w-5" aria-hidden="true" />}
+                    label="Duration"
+                    value={durationLabel}
+                  />
+                )}
 
-                <div className="py-5 space-y-4">
-                  {formattedDuration && (
-                    <SidebarInfo
-                      icon={
-                        <Clock className="w-5 h-5 text-[#061B45]" />
-                      }
-                      label="Duration"
-                      value={
-                        <>
-                          {formattedDuration}
+                {pkg.destination && (
+                  <SidebarInfo
+                    icon={<MapPin className="h-5 w-5" aria-hidden="true" />}
+                    label="Destination"
+                    value={pkg.destination}
+                  />
+                )}
 
-                          {pkg?.duration_nights !==
-                            undefined &&
-                            ` / ${pkg.duration_nights} ${
-                              Number(
-                                pkg.duration_nights
-                              ) === 1
-                                ? "night"
-                                : "nights"
-                            }`}
-                        </>
-                      }
-                      bg="bg-blue-50"
-                    />
-                  )}
+                {packageTypeLabel && (
+                  <SidebarInfo
+                    icon={<MapPin className="h-5 w-5" aria-hidden="true" />}
+                    label="Package Type"
+                    value={packageTypeLabel}
+                  />
+                )}
 
-                  {pkg.destination && (
-                    <SidebarInfo
-                      icon={
-                        <MapPin className="w-5 h-5 text-[#FF3B0B]" />
-                      }
-                      label="Destination"
-                      value={pkg.destination}
-                      bg="bg-red-50"
-                    />
-                  )}
+                {itinerary.length > 0 && (
+                  <SidebarInfo
+                    icon={
+                      <CalendarDays className="h-5 w-5" aria-hidden="true" />
+                    }
+                    label="Itinerary"
+                    value={itineraryDaysLabel}
+                  />
+                )}
+              </div>
 
-                  {packageTypeLabel && (
-                    <SidebarInfo
-                      icon={
-                        <MapPin className="w-5 h-5 text-[#061B45]" />
-                      }
-                      label="Package Type"
-                      value={packageTypeLabel}
-                      bg="bg-gray-100"
-                    />
-                  )}
+              {/* ACTIONS */}
+              <div className="rounded-xl bg-surface p-4">
+                <p className="text-xs leading-5 text-text-secondary sm:text-sm sm:leading-6">
+                  Get your personalized itinerary for{" "}
+                  <strong className="text-text-dark">{pkg.title}</strong>.
+                  Submit your details and our travel team will take care of the
+                  rest.
+                </p>
 
-                  {itinerary.length > 0 && (
-                    <SidebarInfo
-                      icon={
-                        <CalendarDays className="w-5 h-5 text-[#061B45]" />
-                      }
-                      label="Itinerary"
-                      value={`${itinerary.length} ${
-                        itinerary.length === 1
-                          ? "Day"
-                          : "Days"
-                      }`}
-                      bg="bg-gray-100"
-                    />
-                  )}
-                </div>
-
-                {/* =================================================
-                    ACTIONS
-                ================================================== */}
-
-                <div className="space-y-3">
-                  {/* DOWNLOAD (opens enquiry form first) */}
-
+                <div className="mt-5 space-y-3">
                   <button
                     type="button"
                     onClick={openDownloadForm}
                     disabled={downloadingPDF}
-                    className="w-full inline-flex items-center justify-center gap-2 rounded-xl bg-navy text-white font-bold px-5 py-3.5 transition-colors shadow-sm disabled:cursor-not-allowed disabled:opacity-70"
+                    className="group inline-flex min-h-[44px] w-full items-center justify-center gap-2 rounded-full bg-accent px-6 py-3 text-sm font-semibold text-white shadow-brand transition-all duration-200 hover:-translate-y-0.5 hover:bg-accent-hover focus:outline-none focus:ring-2 focus:ring-accent/40 focus:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-70 disabled:hover:translate-y-0"
                   >
-                    <Download className="w-4 h-4" />
-                    {downloadingPDF
-                      ? "Preparing..."
-                      : "Download Itinerary"}
+                    <Download className="h-4 w-4" aria-hidden="true" />
+                    {downloadingPDF ? "Preparing..." : "Download Itinerary"}
                   </button>
-
-                  {/* REVIEW */}
-
-                  {/* <button
-                    type="button"
-                    onClick={openReview}
-                    className="w-full inline-flex items-center justify-center gap-2 rounded-xl border border-[#061B45] text-[#061B45] hover:bg-[#061B45] hover:text-white font-bold px-5 py-3.5 transition-colors"
-                  >
-                    <MessageSquareHeart className="w-4 h-4" />
-                    Your Valuable Review
-                  </button> */}
-
-                  {/* MORE PACKAGES */}
 
                   <Link
                     to="/packages"
-                    className="w-full inline-flex items-center justify-center gap-2 rounded-xl border border-gray-200 text-gray-700 hover:bg-accent hover:text-white font-bold px-5 py-3.5 transition-colors"
+                    className="group inline-flex min-h-[44px] w-full items-center justify-center gap-2 rounded-full border border-border px-6 py-3 text-sm font-semibold text-text-dark transition-colors hover:border-primary hover:bg-surface-soft hover:text-primary"
                   >
                     View More Packages
-                    <ChevronRight className="w-4 h-4" />
+                    <ChevronRight
+                      className="arrow-shift h-4 w-4"
+                      aria-hidden="true"
+                    />
                   </Link>
                 </div>
-
-                {/* TRUST */}
-
-                <div className="mt-5 pt-5 border-t border-gray-200">
-                  <div className="flex items-start gap-3">
-                    <div className="w-9 h-9 rounded-full bg-green-50 flex items-center justify-center shrink-0">
-                      <Download className="w-5 h-5 text-green-600" />
-                    </div>
-
-                    <div>
-                      <p className="font-semibold text-[#061B45] text-sm">
-                        Get your personalized itinerary
-                      </p>
-
-                      <p className="text-xs text-gray-500 mt-1 leading-5">
-                        Submit your details and receive
-                        your personalized trip itinerary.
-                      </p>
-                    </div>
-                  </div>
-                </div>
               </div>
-            </aside>
+            </div>
+          </aside>
+        </div>
+      </main>
+
+      {/* ==================================================
+          REVIEW CTA
+          Full-width band BELOW <main>, above the FAQ
+          (same as DestinationDetail).
+      ================================================== */}
+      <section className="border-y border-divider bg-surface-soft">
+        <div className="mx-auto max-w-7xl px-4 py-10 sm:px-6 sm:py-12 lg:px-8">
+          <div className="flex flex-col gap-6 rounded-2xl border border-divider bg-card p-6 shadow-travel-card sm:rounded-3xl sm:p-8 md:flex-row md:items-center md:justify-between">
+            <div className="min-w-0">
+              <p className="text-xs font-semibold uppercase tracking-wide text-primary sm:text-sm">
+                Traveller experiences
+              </p>
+
+              <h2 className="mt-2 font-display text-3xl font-semibold text-text-dark">
+                Your Valuable Review
+              </h2>
+
+              <p className="mt-2 max-w-2xl text-sm text-text sm:text-base">
+                Share your experience with {BRAND_NAME} and help future
+                travellers plan their journey.
+              </p>
+            </div>
+
+            <button
+              type="button"
+              onClick={openReview}
+              className={`${PRIMARY_BUTTON} min-h-[44px] shrink-0 px-5 py-3.5`}
+            >
+              <MessageSquareHeart className="h-4 w-4" aria-hidden="true" />
+              Your Valuable Review
+            </button>
           </div>
-        </main>
+        </div>
+      </section>
 
-        {/* =====================================================
-            REVIEW CTA
-        ====================================================== */}
+      {/* ==================================================
+          FAQ
+      ================================================== */}
+      <section ref={faqSectionRef} className="w-full">
+        <FAQSection category="packages" />
+      </section>
 
-        <section className="border-y border-gray-100 bg-gray-50">
-          <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-10 sm:py-12">
-            <div className="rounded-2xl sm:rounded-3xl bg-white border border-gray-200 p-6 sm:p-8 flex flex-col md:flex-row md:items-center md:justify-between gap-6">
-              <div className="min-w-0">
-                <p className="text-xs sm:text-sm uppercase tracking-wide font-bold text-[#FF3B0B]">
-                  Traveller experiences
-                </p>
+      {/* ==================================================
+          FOOTER
+      ================================================== */}
+      <Footer />
 
-                <h2 className="mt-2 text-2xl sm:text-3xl font-bold text-[#061B45]">
-                  Your Valuable Review
-                </h2>
+      {/* ==================================================
+          FLOATING DOWNLOAD (mobile + tablet)
+      ================================================== */}
+      {showFloatingDownload && (
+        <div className="fixed bottom-5 left-4 z-[80] sm:left-6 lg:hidden">
+          <button
+            type="button"
+            onClick={openDownloadForm}
+            disabled={downloadingPDF}
+            className="inline-flex items-center gap-2 rounded-full bg-accent px-4 py-3 text-sm font-bold text-white shadow-brand transition-all duration-200 hover:bg-accent-hover active:scale-[0.97] disabled:cursor-not-allowed disabled:opacity-70 sm:px-5 sm:py-3.5 sm:text-base"
+          >
+            <Download className="h-4 w-4 sm:h-5 sm:w-5" aria-hidden="true" />
+            <span>{downloadingPDF ? "Preparing..." : "Download Itinerary"}</span>
+          </button>
+        </div>
+      )}
 
-                <p className="mt-2 text-sm sm:text-base text-gray-600 max-w-2xl">
-                  Share your experience with
-                  On a Trip Holidays and help future
-                  travellers plan their journey.
-                </p>
+      {/* ==================================================
+          ENQUIRY / DOWNLOAD FORM
+      ================================================== */}
+      {showEnquiry && (
+        <EnquiryForm
+          pkg={pkg}
+          destination={pkg?.destination || null}
+          onClose={() => setShowEnquiry(false)}
+          onSuccess={handleEnquirySuccess}
+          downloadItinerary={false}
+        />
+      )}
+
+      {/* ==================================================
+          REVIEW MODAL
+      ================================================== */}
+      {showReview && (
+        <ReviewFormModal
+          open={showReview}
+          pkg={pkg}
+          onClose={() => setShowReview(false)}
+          onSubmitted={() => setShowReview(false)}
+        />
+      )}
+
+      {/* ==================================================
+          TERMS / CANCELLATION POPUP
+      ================================================== */}
+      {activePolicy && (
+        <div
+          className="fixed inset-0 z-[100] flex items-center justify-center bg-ink-900/50 p-3 backdrop-blur-sm sm:p-4"
+          onClick={() => setActivePolicy(null)}
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby="policy-modal-title"
+        >
+          <div
+            className="relative flex max-h-[90vh] w-full max-w-2xl flex-col overflow-hidden rounded-2xl bg-card shadow-2xl sm:rounded-3xl"
+            onClick={(event) => event.stopPropagation()}
+          >
+            <div className="flex shrink-0 items-center justify-between gap-4 border-b border-divider px-5 py-5 sm:px-7">
+              <div className="flex min-w-0 items-center gap-3">
+                <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-surface-soft text-primary">
+                  {activePolicy === "terms" ? (
+                    <FileText className="h-5 w-5" aria-hidden="true" />
+                  ) : (
+                    <ShieldCheck className="h-5 w-5" aria-hidden="true" />
+                  )}
+                </div>
+
+                <div className="min-w-0">
+                  <h2
+                    id="policy-modal-title"
+                    className="font-display text-2xl font-semibold text-text-dark"
+                  >
+                    {activePolicy === "terms"
+                      ? "Terms & Conditions"
+                      : "Cancellation Policy"}
+                  </h2>
+
+                  <p className="text-xs text-muted sm:text-sm">
+                    {activePolicy === "terms"
+                      ? "Important booking information"
+                      : "Cancellation and refund information"}
+                  </p>
+                </div>
               </div>
 
               <button
                 type="button"
-                onClick={openReview}
-                className="inline-flex items-center justify-center gap-2 rounded-xl bg-[#FF3B0B] hover:bg-[#E92F00] text-white font-bold px-5 py-3.5 transition shrink-0"
+                onClick={() => setActivePolicy(null)}
+                className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-surface transition hover:bg-surface-soft"
+                aria-label="Close"
               >
-                <MessageSquareHeart className="w-4 h-4" />
-                Your Valuable Review
+                <X className="h-5 w-5 text-text-dark" aria-hidden="true" />
+              </button>
+            </div>
+
+            <div className="flex-1 overflow-y-auto px-5 py-6 sm:px-7">
+              <div className="whitespace-pre-line break-words text-sm leading-7 text-text sm:text-base">
+                {activePolicy === "terms"
+                  ? pkg.terms_and_conditions
+                  : pkg.cancellation_policy}
+              </div>
+            </div>
+
+            <div className="shrink-0 border-t border-divider bg-surface px-5 py-4 sm:px-7">
+              <button
+                type="button"
+                onClick={() => setActivePolicy(null)}
+                className={`${PRIMARY_BUTTON} min-h-[44px] w-full px-6 py-3 sm:ml-auto sm:w-auto`}
+              >
+                Close
               </button>
             </div>
           </div>
-        </section>
-
-        {/* =====================================================
-            FAQ
-        ====================================================== */}
-
-        <section ref={faqSectionRef}>
-          <FAQSection category="packages" />
-        </section>
-
-        <Footer />
-
-        {/* =====================================================
-            MOBILE / TABLET FLOATING DOWNLOAD
-        ====================================================== */}
-
-        {showFloatingDownload && (
-          <div className="fixed bottom-5 left-4 sm:left-6 z-[80] lg:hidden">
-            <button
-              type="button"
-              onClick={openDownloadForm}
-              disabled={downloadingPDF}
-              className="inline-flex items-center gap-2 rounded-full bg-[#061B45] hover:bg-[#0B2559] text-white px-4 sm:px-5 py-3 sm:py-3.5 text-sm sm:text-base font-bold shadow-xl shadow-black/15 transition-all duration-200 active:scale-[0.97] disabled:cursor-not-allowed disabled:opacity-70"
-            >
-              <Download className="w-4 h-4 sm:w-5 sm:h-5" />
-
-              <span>
-                {downloadingPDF
-                  ? "Preparing..."
-                  : "Download Itinerary"}
-              </span>
-            </button>
-          </div>
-        )}
-
-        {/* =====================================================
-            ENQUIRY / DOWNLOAD FORM
-
-            The PDF is generated ONLY from onSuccess, after the
-            enquiry is submitted successfully. downloadItinerary
-            is false so EnquiryForm does not also generate it
-            (that would download the PDF twice).
-        ====================================================== */}
-
-        {showEnquiry && (
-          <EnquiryForm
-            pkg={pkg}
-            destination={pkg?.destination || null}
-            onClose={() => {
-              setShowEnquiry(false);
-            }}
-            onSuccess={handleEnquirySuccess}
-            downloadItinerary={false}
-          />
-        )}
-
-        {/* =====================================================
-            REVIEW MODAL
-        ====================================================== */}
-
-        {showReview && (
-          <ReviewFormModal
-            open={showReview}
-            pkg={pkg}
-            onClose={closeReview}
-            onSubmitted={() => {
-              setShowReview(false);
-            }}
-          />
-        )}
-
-        {/* =====================================================
-            TERMS / CANCELLATION MODAL
-        ====================================================== */}
-
-        {activePolicy && (
-          <div
-            className="fixed inset-0 z-[100] bg-black/60 backdrop-blur-sm flex items-center justify-center p-3 sm:p-4"
-            onClick={() =>
-              setActivePolicy(null)
-            }
-            role="dialog"
-            aria-modal="true"
-            aria-labelledby="policy-modal-title"
-          >
-            <div
-              className="relative w-full max-w-2xl max-h-[90vh] bg-white rounded-2xl sm:rounded-3xl shadow-2xl overflow-hidden flex flex-col"
-              onClick={(event) =>
-                event.stopPropagation()
-              }
-            >
-              {/* HEADER */}
-
-              <div className="shrink-0 flex items-center justify-between gap-4 px-5 sm:px-7 py-5 border-b border-gray-200">
-                <div className="flex items-center gap-3 min-w-0">
-                  <div
-                    className={`w-11 h-11 rounded-xl flex items-center justify-center shrink-0 ${
-                      activePolicy === "terms"
-                        ? "bg-blue-50"
-                        : "bg-red-50"
-                    }`}
-                  >
-                    {activePolicy === "terms" ? (
-                      <FileText className="w-5 h-5 text-[#061B45]" />
-                    ) : (
-                      <ShieldCheck className="w-5 h-5 text-[#FF3B0B]" />
-                    )}
-                  </div>
-
-                  <div className="min-w-0">
-                    <h2
-                      id="policy-modal-title"
-                      className="text-lg sm:text-xl font-bold text-[#061B45]"
-                    >
-                      {activePolicy === "terms"
-                        ? "Terms & Conditions"
-                        : "Cancellation Policy"}
-                    </h2>
-
-                    <p className="text-xs sm:text-sm text-gray-500">
-                      {activePolicy === "terms"
-                        ? "Important booking information"
-                        : "Cancellation and refund information"}
-                    </p>
-                  </div>
-                </div>
-
-                <button
-                  type="button"
-                  onClick={() =>
-                    setActivePolicy(null)
-                  }
-                  className="w-9 h-9 rounded-full bg-gray-100 hover:bg-gray-200 flex items-center justify-center transition shrink-0"
-                  aria-label="Close"
-                >
-                  <X className="w-5 h-5 text-gray-700" />
-                </button>
-              </div>
-
-              {/* CONTENT */}
-
-              <div className="flex-1 overflow-y-auto px-5 sm:px-7 py-6">
-                <div className="text-gray-600 text-sm sm:text-base leading-7 whitespace-pre-line break-words">
-                  {activePolicy === "terms"
-                    ? pkg.terms_and_conditions
-                    : pkg.cancellation_policy}
-                </div>
-              </div>
-
-              {/* FOOTER */}
-
-              <div className="shrink-0 px-5 sm:px-7 py-4 border-t border-gray-200 bg-gray-50">
-                <button
-                  type="button"
-                  onClick={() =>
-                    setActivePolicy(null)
-                  }
-                  className="w-full sm:w-auto sm:ml-auto flex items-center justify-center gap-2 px-6 py-3 rounded-xl bg-[#061B45] hover:bg-[#0B2559] text-white font-semibold transition-colors"
-                >
-                  Close
-                </button>
-              </div>
-            </div>
-          </div>
-        )}
-      </div>
-    </>
-  );
-};
-
-/* =========================================================
-   INFO CARD
-========================================================= */
-
-function InfoCard({
-  icon,
-  label,
-  value,
-}) {
-  return (
-    <div className="rounded-2xl border border-gray-200 bg-gray-50 p-5 min-w-0">
-      <div className="flex items-center gap-3 mb-2">
-        <div className="w-10 h-10 rounded-xl bg-white flex items-center justify-center shrink-0">
-          {icon}
         </div>
-
-        <span className="text-sm text-gray-500">
-          {label}
-        </span>
-      </div>
-
-      <p className="font-bold text-[#061B45] break-words">
-        {value}
-      </p>
+      )}
     </div>
   );
 }
 
-/* =========================================================
-   SIDEBAR INFO
-========================================================= */
 
-function SidebarInfo({
-  icon,
-  label,
-  value,
-  bg,
-}) {
-  return (
-    <div className="flex items-center gap-3 min-w-0">
-      <div
-        className={`w-10 h-10 rounded-xl ${bg} flex items-center justify-center shrink-0`}
-      >
-        {icon}
-      </div>
 
-      <div className="min-w-0">
-        <p className="text-xs text-gray-500">
-          {label}
-        </p>
 
-        <p className="font-semibold text-[#061B45] break-words">
-          {value}
-        </p>
-      </div>
-    </div>
-  );
-}
 
-/* =========================================================
-   POLICY CARD
-========================================================= */
 
-function PolicyCard({
-  type,
-  onClick,
-}) {
-  const isTerms = type === "terms";
 
-  return (
-    <button
-      type="button"
-      onClick={onClick}
-      className={`group w-full text-left rounded-2xl border border-gray-200 bg-white p-5 sm:p-6 transition-all duration-200 ${
-        isTerms
-          ? "hover:border-[#061B45] hover:shadow-md"
-          : "hover:border-[#FF3B0B] hover:shadow-md"
-      }`}
-    >
-      <div className="flex items-center gap-4">
-        <div
-          className={`w-12 h-12 rounded-xl flex items-center justify-center shrink-0 transition-colors ${
-            isTerms
-              ? "bg-blue-50 group-hover:bg-[#061B45]"
-              : "bg-red-50 group-hover:bg-[#FF3B0B]"
-          }`}
-        >
-          {isTerms ? (
-            <FileText className="w-6 h-6 text-[#061B45] group-hover:text-white transition-colors" />
-          ) : (
-            <ShieldCheck className="w-6 h-6 text-[#FF3B0B] group-hover:text-white transition-colors" />
-          )}
-        </div>
 
-        <div className="min-w-0 flex-1">
-          <h3 className="font-bold text-[#061B45] text-base sm:text-lg">
-            {isTerms
-              ? "Terms & Conditions"
-              : "Cancellation Policy"}
-          </h3>
 
-          <p className="text-sm text-gray-500 mt-1">
-            {isTerms
-              ? "View booking terms and important information"
-              : "View cancellation and refund information"}
-          </p>
-        </div>
 
-        <ChevronRight className="w-5 h-5 text-gray-400 group-hover:text-[#FF3B0B] transition-colors shrink-0" />
-      </div>
-    </button>
-  );
-}
 
-export default PackageDetail;
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+// import { useEffect, useMemo, useRef, useState } from "react";
+// import { Link, useParams } from "react-router-dom";
+// import {
+//   ArrowLeft,
+//   CalendarDays,
+//   Check,
+//   ChevronRight,
+//   Clock,
+//   Download,
+//   FileText,
+//   MapPin,
+//   MessageSquareHeart,
+//   ShieldCheck,
+//   X,
+// } from "lucide-react";
+
+// import { getPackageBySlug } from "../../api/content";
+// import { useQuery } from "../../hooks/useQuery";
+// import Footer from "../../components/Footer";
+// import Seo from "../../components/Seo";
+// import FAQSection from "../../components/FAQSection";
+// import EnquiryForm from "../EnquiryForm";
+// import ReviewFormModal from "../../components/ReviewFormModal";
+// import generatePackagePDF from "../../components/PackageItineraryPDF";
+
+// /* =========================================================
+//    BRAND
+//    Written in Title Case. Set VITE_SITE_URL in .env so SEO
+//    links use your real domain.
+// ========================================================= */
+
+// const BRAND_NAME = "Manyara Prive Vacations";
+
+// const SITE_URL = (
+//   import.meta.env.VITE_SITE_URL || window.location.origin
+// ).replace(/\/$/, "");
+
+// const PACKAGE_TYPE_LABELS = {
+//   pilgrimage: "Pilgrimage",
+//   mountains_adventure: "Mountains & Adventure",
+//   romantic: "Romantic",
+//   international: "International",
+//   beach: "Beach",
+//   family: "Family",
+//   wildlife_nature: "Wildlife & Nature",
+// };
+
+// const PRIMARY_BUTTON =
+//   "inline-flex items-center justify-center gap-2 rounded-xl bg-primary font-semibold text-white transition-colors hover:bg-primary-hover disabled:cursor-not-allowed disabled:opacity-70";
+
+// /* =========================================================
+//    HELPERS
+// ========================================================= */
+
+// const getImageUrl = (image) => {
+//   if (!image) return "";
+//   if (typeof image === "string") return image.trim();
+
+//   return (
+//     image.url || image.secure_url || image.src || image.image_url || ""
+//   );
+// };
+
+// const getTextValue = (item) => {
+//   if (!item) return "";
+//   if (typeof item === "string") return item;
+
+//   return (
+//     item.name || item.title || item.description || item.text || item.value || ""
+//   );
+// };
+
+// /* Accepts an array, or a comma separated string */
+// const getListItems = (value) => {
+//   const items = Array.isArray(value) ? value.map(getTextValue) : [value];
+
+//   return items
+//     .flatMap((item) => (typeof item === "string" ? item.split(",") : []))
+//     .map((part) => part.trim())
+//     .filter(Boolean);
+// };
+
+// const formatPrice = (price) => {
+//   if (price === null || price === undefined || price === "") {
+//     return "Price on request";
+//   }
+
+//   const number = Number(price);
+//   if (Number.isNaN(number)) return String(price);
+
+//   return `₹${number.toLocaleString("en-IN", { maximumFractionDigits: 2 })}`;
+// };
+
+// /* "5 Days / 4 nights" */
+// const formatDuration = (days, nights) => {
+//   const numericDays = Number(days);
+//   if (!numericDays || Number.isNaN(numericDays)) return "";
+
+//   const daysText = `${numericDays} ${numericDays === 1 ? "Day" : "Days"}`;
+
+//   if (nights === undefined || nights === null) return daysText;
+
+//   return `${daysText} / ${nights} ${Number(nights) === 1 ? "night" : "nights"}`;
+// };
+
+// /* =========================================================
+//    SMALL COMPONENTS
+// ========================================================= */
+
+// function InfoCard({ icon, label, value }) {
+//   return (
+//     <div className="min-w-0 rounded-2xl border border-divider bg-surface p-5">
+//       <div className="mb-2 flex items-center gap-3">
+//         <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-card text-primary">
+//           {icon}
+//         </div>
+//         <span className="text-sm text-muted">{label}</span>
+//       </div>
+
+//       <p className="break-words font-bold text-text-dark">{value}</p>
+//     </div>
+//   );
+// }
+
+// function SidebarInfo({ icon, label, value }) {
+//   return (
+//     <div className="flex min-w-0 items-center gap-3">
+//       <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-primary-lighter text-primary">
+//         {icon}
+//       </div>
+
+//       <div className="min-w-0">
+//         <p className="text-xs text-muted">{label}</p>
+//         <p className="break-words font-semibold text-text-dark">{value}</p>
+//       </div>
+//     </div>
+//   );
+// }
+
+// function PolicyCard({ type, onClick }) {
+//   const isTerms = type === "terms";
+//   const Icon = isTerms ? FileText : ShieldCheck;
+
+//   return (
+//     <button
+//       type="button"
+//       onClick={onClick}
+//       className="group w-full rounded-2xl border border-divider bg-card p-5 text-left transition-all duration-200 hover:border-primary hover:shadow-travel-card sm:p-6"
+//     >
+//       <div className="flex items-center gap-4">
+//         <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-xl bg-primary-lighter text-primary transition-colors group-hover:bg-primary group-hover:text-white">
+//           <Icon className="h-6 w-6" aria-hidden="true" />
+//         </div>
+
+//         <div className="min-w-0 flex-1">
+//           <h3 className="text-base font-bold text-text-dark sm:text-lg">
+//             {isTerms ? "Terms & Conditions" : "Cancellation Policy"}
+//           </h3>
+
+//           <p className="mt-1 text-sm text-muted">
+//             {isTerms
+//               ? "View booking terms and important information"
+//               : "View cancellation and refund information"}
+//           </p>
+//         </div>
+
+//         <ChevronRight
+//           className="h-5 w-5 shrink-0 text-muted transition-colors group-hover:text-primary"
+//           aria-hidden="true"
+//         />
+//       </div>
+//     </button>
+//   );
+// }
+
+// /* Shown only on the very first visit, before anything is cached. */
+// function DetailSkeleton() {
+//   return (
+//     <div
+//       className="min-h-screen bg-background"
+//       role="status"
+//       aria-label="Loading package details"
+//     >
+//       <div className="mx-auto max-w-7xl animate-pulse px-4 py-10 sm:px-6 lg:px-8">
+//         <div className="h-4 w-48 rounded bg-primary/10" />
+//         <div className="mt-8 h-5 w-40 rounded bg-primary/10" />
+//         <div className="mt-4 h-12 w-3/4 rounded bg-primary/10" />
+//         <div className="mt-8 aspect-[16/9] rounded-3xl bg-primary/10 sm:aspect-[21/9]" />
+
+//         <div className="mt-10 grid gap-10 lg:grid-cols-[minmax(0,1fr)_360px]">
+//           <div className="space-y-4">
+//             <div className="h-8 w-56 rounded bg-primary/10" />
+//             <div className="h-4 rounded bg-primary/10" />
+//             <div className="h-4 rounded bg-primary/10" />
+//             <div className="h-4 w-2/3 rounded bg-primary/10" />
+//           </div>
+//           <div className="h-80 rounded-3xl bg-primary/10" />
+//         </div>
+//       </div>
+//     </div>
+//   );
+// }
+
+// function NotFound({ message }) {
+//   return (
+//     <div className="min-h-screen bg-background">
+//       <div className="mx-auto max-w-3xl px-4 py-20 text-center sm:px-6 sm:py-28">
+//         <div className="mx-auto mb-6 flex h-16 w-16 items-center justify-center rounded-full bg-primary-lighter">
+//           <FileText className="h-8 w-8 text-primary" aria-hidden="true" />
+//         </div>
+
+//         <h1 className="mb-3 font-display text-4xl font-semibold text-text-dark">
+//           Package Not Found
+//         </h1>
+
+//         <p className="mb-8 text-text">
+//           {message || "The package you are looking for does not exist."}
+//         </p>
+
+//         <Link to="/packages" className={`${PRIMARY_BUTTON} px-5 py-3`}>
+//           <ArrowLeft className="h-4 w-4" aria-hidden="true" />
+//           Back to Packages
+//         </Link>
+//       </div>
+//     </div>
+//   );
+// }
+
+// /* =========================================================
+//    PAGE
+// ========================================================= */
+
+// export default function PackageDetail() {
+//   const { slug } = useParams();
+
+//   /* Cached data: instant on repeat visits, updates itself when fresh. */
+//   const { data, loading, error } = useQuery(getPackageBySlug, slug);
+//   const pkg = data?.data ?? data ?? null;
+
+//   const [showEnquiry, setShowEnquiry] = useState(false);
+//   const [showReview, setShowReview] = useState(false);
+//   const [activePolicy, setActivePolicy] = useState(null);
+//   const [downloadingPDF, setDownloadingPDF] = useState(false);
+
+//   /* Floating "Download Itinerary" button (mobile + tablet) */
+//   const packageAreaRef = useRef(null);
+//   const faqSectionRef = useRef(null);
+//   const [showFloatingDownload, setShowFloatingDownload] = useState(false);
+
+//   /* ---------------------------------------------------------
+//      Floating button: visible while the package is on screen,
+//      hidden near the FAQ and while a modal is open.
+//   --------------------------------------------------------- */
+
+//   useEffect(() => {
+//     const packageElement = packageAreaRef.current;
+//     const faqElement = faqSectionRef.current;
+
+//     if (loading || !pkg || !packageElement) {
+//       setShowFloatingDownload(false);
+//       return undefined;
+//     }
+
+//     let packageVisible = false;
+//     let faqVisible = false;
+
+//     const update = () =>
+//       setShowFloatingDownload(
+//         packageVisible && !faqVisible && !showEnquiry && !showReview
+//       );
+
+//     const packageObserver = new IntersectionObserver(
+//       ([entry]) => {
+//         packageVisible = entry.isIntersecting;
+//         update();
+//       },
+//       { threshold: 0.08, rootMargin: "-10% 0px -15% 0px" }
+//     );
+
+//     const faqObserver = faqElement
+//       ? new IntersectionObserver(
+//           ([entry]) => {
+//             faqVisible = entry.isIntersecting;
+//             update();
+//           },
+//           { threshold: 0.05, rootMargin: "0px 0px -10% 0px" }
+//         )
+//       : null;
+
+//     packageObserver.observe(packageElement);
+//     if (faqObserver) faqObserver.observe(faqElement);
+
+//     return () => {
+//       packageObserver.disconnect();
+//       if (faqObserver) faqObserver.disconnect();
+//     };
+//   }, [loading, pkg, showEnquiry, showReview]);
+
+//   /* Close the policy popup with Escape */
+//   useEffect(() => {
+//     if (!activePolicy) return undefined;
+
+//     const onKeyDown = (event) => {
+//       if (event.key === "Escape") setActivePolicy(null);
+//     };
+
+//     document.addEventListener("keydown", onKeyDown);
+//     return () => document.removeEventListener("keydown", onKeyDown);
+//   }, [activePolicy]);
+
+//   /* ---------------------------------------------------------
+//      Derived content
+//   --------------------------------------------------------- */
+
+//   const packageImages = useMemo(() => {
+//     if (!pkg?.images) return [];
+
+//     const images = Array.isArray(pkg.images) ? pkg.images : [pkg.images];
+//     return images.map(getImageUrl).filter(Boolean);
+//   }, [pkg]);
+
+//   const itinerary = useMemo(() => {
+//     if (!Array.isArray(pkg?.itinerary)) return [];
+
+//     return [...pkg.itinerary]
+//       .sort((a, b) => Number(a?.day || 0) - Number(b?.day || 0))
+//       .map((item, index) => ({
+//         ...item,
+//         day: item?.day || index + 1,
+//         title: item?.title || "",
+//         description: item?.description || "",
+//         image: getImageUrl(item?.image),
+//       }));
+//   }, [pkg]);
+
+//   const facilities = useMemo(() => getListItems(pkg?.facilities), [pkg]);
+//   const inclusions = useMemo(() => getListItems(pkg?.inclusions), [pkg]);
+//   const exclusions = useMemo(() => getListItems(pkg?.exclusions), [pkg]);
+
+//   const formattedPrice = formatPrice(pkg?.price);
+//   const hasPrice =
+//     pkg?.price !== null && pkg?.price !== undefined && pkg?.price !== "";
+
+//   const durationLabel = formatDuration(pkg?.duration_days, pkg?.duration_nights);
+
+//   const packageTypeLabel = useMemo(() => {
+//     if (!pkg?.package_type) return "";
+
+//     return (
+//       PACKAGE_TYPE_LABELS[pkg.package_type] ||
+//       String(pkg.package_type)
+//         .replaceAll("_", " ")
+//         .replace(/\b\w/g, (letter) => letter.toUpperCase())
+//     );
+//   }, [pkg]);
+
+//   const itineraryDaysLabel = `${itinerary.length} ${
+//     itinerary.length === 1 ? "Day" : "Days"
+//   }`;
+
+//   /* ---------------------------------------------------------
+//      SEO
+//   --------------------------------------------------------- */
+
+//   const seoDescription =
+//     pkg?.description ||
+//     `Explore ${pkg?.title || "this holiday package"} with ${BRAND_NAME}.`;
+
+//   const canonicalUrl = `${SITE_URL}/packages/${encodeURIComponent(slug || "")}`;
+
+//   const jsonLd = useMemo(() => {
+//     if (!pkg) return null;
+
+//     return {
+//       "@context": "https://schema.org",
+//       "@type": "TouristTrip",
+//       name: pkg.title,
+//       description: seoDescription,
+//       url: canonicalUrl,
+//       provider: { "@type": "TravelAgency", name: BRAND_NAME },
+//       touristType: [
+//         "Leisure travelers",
+//         "Families",
+//         "Couples",
+//         "Adventure travelers",
+//       ],
+//       ...(packageImages[0] ? { image: [packageImages[0]] } : {}),
+//       ...(hasPrice
+//         ? {
+//             offers: {
+//               "@type": "Offer",
+//               price: Number(pkg.price),
+//               priceCurrency: "INR",
+//               availability: "https://schema.org/InStock",
+//               url: canonicalUrl,
+//             },
+//           }
+//         : {}),
+//     };
+//   }, [pkg, packageImages, seoDescription, canonicalUrl, hasPrice]);
+
+//   /* ---------------------------------------------------------
+//      Actions
+//   --------------------------------------------------------- */
+
+//   const openDownloadForm = () => {
+//     setShowEnquiry(true);
+//     setShowFloatingDownload(false);
+//   };
+
+//   const openReview = () => {
+//     setShowReview(true);
+//     setShowFloatingDownload(false);
+//   };
+
+//   const handleDownloadPackagePDF = async () => {
+//     if (!pkg || downloadingPDF) return;
+
+//     try {
+//       setDownloadingPDF(true);
+//       await generatePackagePDF(pkg);
+//     } catch (pdfError) {
+//       console.error("Package PDF generation failed:", pdfError);
+//       window.alert("Unable to generate the itinerary PDF. Please try again.");
+//     } finally {
+//       setDownloadingPDF(false);
+//     }
+//   };
+
+//   /* Download Itinerary -> enquiry form -> enquiry saved -> onSuccess -> PDF.
+//      EnquiryForm gets downloadItinerary={false} so the PDF is not made twice. */
+//   const handleEnquirySuccess = () => handleDownloadPackagePDF();
+
+//   /* ---------------------------------------------------------
+//      States
+//   --------------------------------------------------------- */
+
+//   if (loading) return <DetailSkeleton />;
+
+//   if (!pkg) {
+//     return (
+//       <NotFound
+//         message={
+//           error?.response?.data?.detail ||
+//           error?.message ||
+//           "The package you are looking for does not exist."
+//         }
+//       />
+//     );
+//   }
+
+//   /* ---------------------------------------------------------
+//      Page
+//   --------------------------------------------------------- */
+
+//   return (
+//     <>
+//       <Seo
+//         title={`${pkg.title} | ${BRAND_NAME}`}
+//         description={seoDescription}
+//         canonical={canonicalUrl}
+//         image={packageImages[0]}
+//         jsonLd={jsonLd}
+//       />
+
+//       <div className="min-h-screen overflow-x-clip bg-background">
+//         {/* BREADCRUMB */}
+//         <section className="border-b border-divider bg-surface">
+//           <div className="mx-auto max-w-7xl px-4 py-4 sm:px-6 lg:px-8">
+//             <nav
+//               aria-label="Breadcrumb"
+//               className="flex flex-wrap items-center gap-2 text-sm text-muted"
+//             >
+//               <Link to="/" className="transition hover:text-primary">
+//                 Home
+//               </Link>
+//               <ChevronRight className="h-4 w-4 shrink-0" aria-hidden="true" />
+//               <Link to="/packages" className="transition hover:text-primary">
+//                 Packages
+//               </Link>
+//               <ChevronRight className="h-4 w-4 shrink-0" aria-hidden="true" />
+//               <span className="max-w-[220px] truncate font-medium text-text-dark sm:max-w-none">
+//                 {pkg.title}
+//               </span>
+//             </nav>
+//           </div>
+//         </section>
+
+//         {/* PACKAGE CONTENT AREA */}
+//         <main
+//           ref={packageAreaRef}
+//           className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8"
+//         >
+//           <div className="pt-6 sm:pt-8">
+//             <Link
+//               to="/packages"
+//               className="inline-flex items-center gap-2 text-sm font-semibold text-primary transition hover:text-primary-hover"
+//             >
+//               <ArrowLeft className="h-4 w-4" aria-hidden="true" />
+//               Back to Packages
+//             </Link>
+//           </div>
+
+//           {/* TITLE */}
+//           <section className="pb-6 pt-5 sm:pt-7">
+//             <div className="mb-4 flex flex-wrap items-center gap-2">
+//               {pkg.destination && (
+//                 <div className="inline-flex items-center gap-2 text-text">
+//                   <MapPin className="h-5 w-5 text-primary" aria-hidden="true" />
+//                   <span>{pkg.destination}</span>
+//                 </div>
+//               )}
+
+//               {packageTypeLabel && (
+//                 <>
+//                   <span className="text-ink-300" aria-hidden="true">
+//                     •
+//                   </span>
+//                   <span className="inline-flex items-center rounded-full bg-primary-lighter px-3 py-1.5 text-xs font-semibold text-primary-dark sm:text-sm">
+//                     {packageTypeLabel}
+//                   </span>
+//                 </>
+//               )}
+//             </div>
+
+//             <h1 className="font-display text-4xl font-semibold leading-tight tracking-tight text-text-display sm:text-5xl lg:text-6xl">
+//               {pkg.title}
+//             </h1>
+
+//             {durationLabel && (
+//               <div className="mt-5 inline-flex items-center gap-2 text-sm text-text-secondary sm:text-base">
+//                 <Clock className="h-5 w-5 text-primary" aria-hidden="true" />
+//                 <span>{durationLabel}</span>
+//               </div>
+//             )}
+//           </section>
+
+//           {/* COVER IMAGE */}
+//           <section className="pb-8 sm:pb-10">
+//             <div className="flex aspect-[16/9] w-full items-center justify-center overflow-hidden rounded-2xl bg-surface sm:aspect-[21/9] sm:rounded-3xl lg:aspect-[2.4/1]">
+//               {packageImages.length > 0 ? (
+//                 <img
+//                   src={packageImages[0]}
+//                   alt={pkg.title}
+//                   className="h-full w-full object-cover"
+//                   loading="eager"
+//                   decoding="async"
+//                 />
+//               ) : (
+//                 <MapPin className="h-12 w-12 text-ink-300" aria-hidden="true" />
+//               )}
+//             </div>
+//           </section>
+
+//           {/* DESCRIPTION */}
+//           {pkg.description && (
+//             <section className="pb-10 sm:pb-12">
+//               <h2 className="mb-4 font-display text-3xl font-semibold text-text-dark">
+//                 About This Package
+//               </h2>
+
+//               <p className="whitespace-pre-line text-sm leading-7 text-text sm:text-base sm:leading-8">
+//                 {pkg.description}
+//               </p>
+//             </section>
+//           )}
+
+//           {/* TWO COLUMNS */}
+//           <div className="grid grid-cols-1 items-start gap-8 pb-16 sm:pb-20 lg:grid-cols-[minmax(0,1fr)_360px] lg:gap-12 xl:gap-14">
+//             {/* LEFT */}
+//             <div className="min-w-0">
+//               {/* PACKAGE INFORMATION */}
+//               <section className="mb-10 sm:mb-12">
+//                 <h2 className="mb-5 font-display text-3xl font-semibold text-text-dark">
+//                   Package Information
+//                 </h2>
+
+//                 <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+//                   {durationLabel && (
+//                     <InfoCard
+//                       icon={<CalendarDays className="h-5 w-5" aria-hidden="true" />}
+//                       label="Duration"
+//                       value={durationLabel}
+//                     />
+//                   )}
+
+//                   {pkg.destination && (
+//                     <InfoCard
+//                       icon={<MapPin className="h-5 w-5" aria-hidden="true" />}
+//                       label="Destination"
+//                       value={pkg.destination}
+//                     />
+//                   )}
+
+//                   {packageTypeLabel && (
+//                     <InfoCard
+//                       icon={<MapPin className="h-5 w-5" aria-hidden="true" />}
+//                       label="Package Type"
+//                       value={packageTypeLabel}
+//                     />
+//                   )}
+
+//                   <InfoCard
+//                     icon={<Clock className="h-5 w-5" aria-hidden="true" />}
+//                     label="Starting From"
+//                     value={formattedPrice}
+//                   />
+//                 </div>
+//               </section>
+
+//               {/* ITINERARY */}
+//               {itinerary.length > 0 && (
+//                 <section className="mb-10 sm:mb-12">
+//                   <div className="mb-6 flex items-center justify-between gap-4">
+//                     <h2 className="font-display text-3xl font-semibold text-text-dark">
+//                       Itinerary
+//                     </h2>
+//                     <span className="text-sm text-muted">{itineraryDaysLabel}</span>
+//                   </div>
+
+//                   <div className="space-y-5 sm:space-y-6">
+//                     {itinerary.map((item, index) => (
+//                       <article
+//                         key={`${item.day}-${index}`}
+//                         className="overflow-hidden rounded-2xl border border-divider bg-card shadow-travel-card sm:rounded-3xl"
+//                       >
+//                         <div className="px-5 pt-5 sm:px-6 sm:pt-6">
+//                           <span className="inline-flex items-center rounded-full bg-primary px-3 py-1.5 text-xs font-bold text-white sm:text-sm">
+//                             Day {item.day}
+//                           </span>
+//                         </div>
+
+//                         {item.title && (
+//                           <div className="px-5 pt-3 sm:px-6">
+//                             <h3 className="font-display text-2xl font-semibold text-text-dark">
+//                               {item.title}
+//                             </h3>
+//                           </div>
+//                         )}
+
+//                         {item.image && (
+//                           <div className="mt-5 aspect-[16/9] overflow-hidden bg-surface sm:aspect-[2/1]">
+//                             <img
+//                               src={item.image}
+//                               alt={`${pkg.title} - Day ${item.day}`}
+//                               className="h-full w-full object-cover"
+//                               loading="lazy"
+//                               decoding="async"
+//                             />
+//                           </div>
+//                         )}
+
+//                         {item.description && (
+//                           <div className="p-5 sm:p-6">
+//                             <p className="whitespace-pre-line text-sm leading-7 text-text sm:text-base">
+//                               {item.description}
+//                             </p>
+//                           </div>
+//                         )}
+//                       </article>
+//                     ))}
+//                   </div>
+//                 </section>
+//               )}
+
+//               {/* FACILITIES */}
+//               {facilities.length > 0 && (
+//                 <section className="mb-10 sm:mb-12">
+//                   <h2 className="mb-5 font-display text-3xl font-semibold text-text-dark">
+//                     Facilities
+//                   </h2>
+
+//                   <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+//                     {facilities.map((facility, index) => (
+//                       <div
+//                         key={`${facility}-${index}`}
+//                         className="flex items-start gap-3 rounded-xl border border-divider bg-card p-4"
+//                       >
+//                         <div className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-success-bg text-success">
+//                           <Check className="h-4 w-4" aria-hidden="true" />
+//                         </div>
+//                         <span className="text-sm text-text sm:text-base">
+//                           {facility}
+//                         </span>
+//                       </div>
+//                     ))}
+//                   </div>
+//                 </section>
+//               )}
+
+//               {/* INCLUSIONS / EXCLUSIONS */}
+//               {(inclusions.length > 0 || exclusions.length > 0) && (
+//                 <section className="mb-10 sm:mb-12">
+//                   <div className="grid grid-cols-1 gap-6 md:grid-cols-2">
+//                     {inclusions.length > 0 && (
+//                       <div className="rounded-2xl border border-success/30 bg-success-bg/50 p-5 sm:p-6">
+//                         <h2 className="mb-5 font-display text-2xl font-semibold text-text-dark">
+//                           Inclusions
+//                         </h2>
+
+//                         <ul className="space-y-3">
+//                           {inclusions.map((item, index) => (
+//                             <li
+//                               key={`${item}-${index}`}
+//                               className="flex items-start gap-3 text-sm text-text sm:text-base"
+//                             >
+//                               <Check
+//                                 className="mt-0.5 h-5 w-5 shrink-0 text-success"
+//                                 aria-hidden="true"
+//                               />
+//                               <span>{item}</span>
+//                             </li>
+//                           ))}
+//                         </ul>
+//                       </div>
+//                     )}
+
+//                     {exclusions.length > 0 && (
+//                       <div className="rounded-2xl border border-error/30 bg-error-bg/50 p-5 sm:p-6">
+//                         <h2 className="mb-5 font-display text-2xl font-semibold text-text-dark">
+//                           Exclusions
+//                         </h2>
+
+//                         <ul className="space-y-3">
+//                           {exclusions.map((item, index) => (
+//                             <li
+//                               key={`${item}-${index}`}
+//                               className="flex items-start gap-3 text-sm text-text sm:text-base"
+//                             >
+//                               <X
+//                                 className="mt-0.5 h-5 w-5 shrink-0 text-error"
+//                                 aria-hidden="true"
+//                               />
+//                               <span>{item}</span>
+//                             </li>
+//                           ))}
+//                         </ul>
+//                       </div>
+//                     )}
+//                   </div>
+//                 </section>
+//               )}
+
+//               {/* TERMS & CANCELLATION */}
+//               {(pkg.terms_and_conditions || pkg.cancellation_policy) && (
+//                 <section className="mb-10 sm:mb-12">
+//                   <h2 className="mb-5 font-display text-3xl font-semibold text-text-dark">
+//                     Important Information
+//                   </h2>
+
+//                   <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+//                     {pkg.terms_and_conditions && (
+//                       <PolicyCard
+//                         type="terms"
+//                         onClick={() => setActivePolicy("terms")}
+//                       />
+//                     )}
+
+//                     {pkg.cancellation_policy && (
+//                       <PolicyCard
+//                         type="cancellation"
+//                         onClick={() => setActivePolicy("cancellation")}
+//                       />
+//                     )}
+//                   </div>
+//                 </section>
+//               )}
+//             </div>
+
+//             {/* RIGHT SIDEBAR */}
+//             <aside className="w-full self-start lg:sticky lg:top-[calc(var(--top-info-height,0px)+6rem)]">
+//               <div className="rounded-2xl border border-divider bg-card p-5 shadow-travel-card sm:rounded-3xl sm:p-6 lg:p-7">
+//                 {/* PRICE */}
+//                 <div className="border-b border-divider pb-5">
+//                   <p className="mb-1 text-sm text-muted">Starting from</p>
+
+//                   <div className="flex flex-wrap items-end gap-2">
+//                     <span className="text-3xl font-extrabold text-primary sm:text-4xl">
+//                       {formattedPrice}
+//                     </span>
+
+//                     {hasPrice && (
+//                       <span className="pb-1 text-sm text-muted">/ person</span>
+//                     )}
+//                   </div>
+//                 </div>
+
+//                 {/* SUMMARY */}
+//                 <div className="space-y-4 py-5">
+//                   {durationLabel && (
+//                     <SidebarInfo
+//                       icon={<Clock className="h-5 w-5" aria-hidden="true" />}
+//                       label="Duration"
+//                       value={durationLabel}
+//                     />
+//                   )}
+
+//                   {pkg.destination && (
+//                     <SidebarInfo
+//                       icon={<MapPin className="h-5 w-5" aria-hidden="true" />}
+//                       label="Destination"
+//                       value={pkg.destination}
+//                     />
+//                   )}
+
+//                   {packageTypeLabel && (
+//                     <SidebarInfo
+//                       icon={<MapPin className="h-5 w-5" aria-hidden="true" />}
+//                       label="Package Type"
+//                       value={packageTypeLabel}
+//                     />
+//                   )}
+
+//                   {itinerary.length > 0 && (
+//                     <SidebarInfo
+//                       icon={<CalendarDays className="h-5 w-5" aria-hidden="true" />}
+//                       label="Itinerary"
+//                       value={itineraryDaysLabel}
+//                     />
+//                   )}
+//                 </div>
+
+//                 {/* ACTIONS */}
+//                 <div className="space-y-3">
+//                   <button
+//                     type="button"
+//                     onClick={openDownloadForm}
+//                     disabled={downloadingPDF}
+//                     className={`${PRIMARY_BUTTON} w-full px-5 py-3.5 shadow-sm`}
+//                   >
+//                     <Download className="h-4 w-4" aria-hidden="true" />
+//                     {downloadingPDF ? "Preparing..." : "Download Itinerary"}
+//                   </button>
+
+//                   <Link
+//                     to="/packages"
+//                     className="inline-flex w-full items-center justify-center gap-2 rounded-xl border border-border px-5 py-3.5 font-semibold text-text-dark transition-colors hover:border-primary hover:bg-surface-soft hover:text-primary"
+//                   >
+//                     View More Packages
+//                     <ChevronRight className="h-4 w-4" aria-hidden="true" />
+//                   </Link>
+//                 </div>
+
+//                 {/* TRUST */}
+//                 <div className="mt-5 border-t border-divider pt-5">
+//                   <div className="flex items-start gap-3">
+//                     <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-success-bg text-success">
+//                       <Download className="h-5 w-5" aria-hidden="true" />
+//                     </div>
+
+//                     <div>
+//                       <p className="text-sm font-semibold text-text-dark">
+//                         Get your personalized itinerary
+//                       </p>
+//                       <p className="mt-1 text-xs leading-5 text-muted">
+//                         Submit your details and receive your personalized trip
+//                         itinerary.
+//                       </p>
+//                     </div>
+//                   </div>
+//                 </div>
+//               </div>
+//             </aside>
+//           </div>
+//         </main>
+
+//         {/* REVIEW CTA */}
+//         <section className="border-y border-divider bg-surface-soft">
+//           <div className="mx-auto max-w-7xl px-4 py-10 sm:px-6 sm:py-12 lg:px-8">
+//             <div className="flex flex-col gap-6 rounded-2xl border border-divider bg-card p-6 shadow-travel-card sm:rounded-3xl sm:p-8 md:flex-row md:items-center md:justify-between">
+//               <div className="min-w-0">
+//                 <p className="text-xs font-semibold uppercase tracking-wide text-primary sm:text-sm">
+//                   Traveller experiences
+//                 </p>
+
+//                 <h2 className="mt-2 font-display text-3xl font-semibold text-text-dark">
+//                   Your Valuable Review
+//                 </h2>
+
+//                 <p className="mt-2 max-w-2xl text-sm text-text sm:text-base">
+//                   Share your experience with {BRAND_NAME} and help future
+//                   travellers plan their journey.
+//                 </p>
+//               </div>
+
+//               <button
+//                 type="button"
+//                 onClick={openReview}
+//                 className={`${PRIMARY_BUTTON} shrink-0 px-5 py-3.5`}
+//               >
+//                 <MessageSquareHeart className="h-4 w-4" aria-hidden="true" />
+//                 Your Valuable Review
+//               </button>
+//             </div>
+//           </div>
+//         </section>
+
+//         {/* FAQ */}
+//         <section ref={faqSectionRef}>
+//           <FAQSection category="packages" />
+//         </section>
+
+//         <Footer />
+
+//         {/* FLOATING DOWNLOAD (mobile + tablet) */}
+//         {showFloatingDownload && (
+//           <div className="fixed bottom-5 left-4 z-[80] sm:left-6 lg:hidden">
+//             <button
+//               type="button"
+//               onClick={openDownloadForm}
+//               disabled={downloadingPDF}
+//               className="inline-flex items-center gap-2 rounded-full bg-primary px-4 py-3 text-sm font-bold text-white shadow-brand transition-all duration-200 hover:bg-primary-hover active:scale-[0.97] disabled:cursor-not-allowed disabled:opacity-70 sm:px-5 sm:py-3.5 sm:text-base"
+//             >
+//               <Download className="h-4 w-4 sm:h-5 sm:w-5" aria-hidden="true" />
+//               <span>{downloadingPDF ? "Preparing..." : "Download Itinerary"}</span>
+//             </button>
+//           </div>
+//         )}
+
+//         {/* ENQUIRY / DOWNLOAD FORM */}
+//         {showEnquiry && (
+//           <EnquiryForm
+//             pkg={pkg}
+//             destination={pkg?.destination || null}
+//             onClose={() => setShowEnquiry(false)}
+//             onSuccess={handleEnquirySuccess}
+//             downloadItinerary={false}
+//           />
+//         )}
+
+//         {/* REVIEW MODAL */}
+//         {showReview && (
+//           <ReviewFormModal
+//             open={showReview}
+//             pkg={pkg}
+//             onClose={() => setShowReview(false)}
+//             onSubmitted={() => setShowReview(false)}
+//           />
+//         )}
+
+//         {/* TERMS / CANCELLATION POPUP */}
+//         {activePolicy && (
+//           <div
+//             className="fixed inset-0 z-[100] flex items-center justify-center bg-ink-900/50 p-3 backdrop-blur-sm sm:p-4"
+//             onClick={() => setActivePolicy(null)}
+//             role="dialog"
+//             aria-modal="true"
+//             aria-labelledby="policy-modal-title"
+//           >
+//             <div
+//               className="relative flex max-h-[90vh] w-full max-w-2xl flex-col overflow-hidden rounded-2xl bg-card shadow-2xl sm:rounded-3xl"
+//               onClick={(event) => event.stopPropagation()}
+//             >
+//               <div className="flex shrink-0 items-center justify-between gap-4 border-b border-divider px-5 py-5 sm:px-7">
+//                 <div className="flex min-w-0 items-center gap-3">
+//                   <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-primary-lighter text-primary">
+//                     {activePolicy === "terms" ? (
+//                       <FileText className="h-5 w-5" aria-hidden="true" />
+//                     ) : (
+//                       <ShieldCheck className="h-5 w-5" aria-hidden="true" />
+//                     )}
+//                   </div>
+
+//                   <div className="min-w-0">
+//                     <h2
+//                       id="policy-modal-title"
+//                       className="font-display text-2xl font-semibold text-text-dark"
+//                     >
+//                       {activePolicy === "terms"
+//                         ? "Terms & Conditions"
+//                         : "Cancellation Policy"}
+//                     </h2>
+
+//                     <p className="text-xs text-muted sm:text-sm">
+//                       {activePolicy === "terms"
+//                         ? "Important booking information"
+//                         : "Cancellation and refund information"}
+//                     </p>
+//                   </div>
+//                 </div>
+
+//                 <button
+//                   type="button"
+//                   onClick={() => setActivePolicy(null)}
+//                   className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-surface transition hover:bg-surface-soft"
+//                   aria-label="Close"
+//                 >
+//                   <X className="h-5 w-5 text-text-dark" aria-hidden="true" />
+//                 </button>
+//               </div>
+
+//               <div className="flex-1 overflow-y-auto px-5 py-6 sm:px-7">
+//                 <div className="whitespace-pre-line break-words text-sm leading-7 text-text sm:text-base">
+//                   {activePolicy === "terms"
+//                     ? pkg.terms_and_conditions
+//                     : pkg.cancellation_policy}
+//                 </div>
+//               </div>
+
+//               <div className="shrink-0 border-t border-divider bg-surface px-5 py-4 sm:px-7">
+//                 <button
+//                   type="button"
+//                   onClick={() => setActivePolicy(null)}
+//                   className={`${PRIMARY_BUTTON} w-full px-6 py-3 sm:ml-auto sm:w-auto`}
+//                 >
+//                   Close
+//                 </button>
+//               </div>
+//             </div>
+//           </div>
+//         )}
+//       </div>
+//     </>
+//   );
+// }
+
+
+

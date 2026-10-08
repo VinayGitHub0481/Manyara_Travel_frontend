@@ -63,7 +63,7 @@ export default function FloatingContact() {
   const cleanNumber = whatsappNumber.replace(/\D/g, "");
 
   const whatsappMessage =
-    "Hello On a Trip Holidays, I would like to know more about your travel packages.";
+    "Hello Manyara Prive Vacations, I would like to know more about your travel packages.";
 
   const whatsappUrl = cleanNumber
     ? `https://wa.me/${cleanNumber}?text=${encodeURIComponent(
@@ -96,7 +96,7 @@ export default function FloatingContact() {
           href={disabled ? undefined : whatsappUrl}
           target="_blank"
           rel="noopener noreferrer"
-          aria-label="Contact On a Trip Holidays on WhatsApp"
+          aria-label="Contact Manyara Prive Vacations Holidays on WhatsApp"
           className={`flex items-center gap-3
             bg-white text-navy
             border border-navy/10
@@ -128,7 +128,7 @@ export default function FloatingContact() {
         {/* Call Us */}
         <a
           href={disabled ? undefined : phoneUrl}
-          aria-label="Call On a Trip Holidays"
+          aria-label="Call Manyara Prive Vacations Holidays"
           className={`flex items-center gap-3
             bg-white text-navy
             border border-navy/10

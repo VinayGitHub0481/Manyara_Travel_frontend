@@ -11,6 +11,7 @@
     "prerender": "node scripts/prerender.mjs"
   },
   "dependencies": {
+    "@tanstack/react-query": "^5.104.0",
     "axios": "^1.7.7",
     "html2pdf.js": "^0.14.0",
     "lucide-react": "^1.38.0",

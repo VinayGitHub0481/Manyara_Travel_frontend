@@ -1,6149 +1,1881 @@
 
-
-import { useEffect, useMemo, useRef, useState } from "react";
-
 import {
-
- Search,
-
- MapPin,
-
- Sparkles,
-
- ShieldCheck,
-
- Headphones,
-
- Plane,
-
- ChevronRight,
-
- Mountain,
-
- Waves,
-
- Heart,
-
- Landmark,
-
- Globe2,
-
- X,
-
- Send,
-
- MessageCircle,
-
- Loader2,
-
- CheckCircle2,
-
- PlaneTakeoff,
-
-} from "lucide-react";
-
+  Fragment,
+  useCallback,
+  useEffect,
+  useLayoutEffect,
+  useMemo,
+  useRef,
+  useState,
+} from "react";
 import { Link, useNavigate } from "react-router-dom";
-
+import {
+  ArrowRight,
+  CalendarClock,
+  CheckCircle2,
+  ChevronLeft,
+  ChevronRight,
+  Compass,
+  Globe2,
+  Headset,
+  Heart,
+  Landmark,
+  Loader2,
+  MapPin,
+  MessageCircle,
+  Mountain,
+  Pause,
+  Plane,
+  PlaneTakeoff,
+  Play,
+  Search,
+  Send,
+  Sparkles,
+  TreePine,
+  Wallet,
+  Waves,
+  X,
+} from "lucide-react";
 import { toast, ToastContainer } from "react-toastify";
-
 import "react-toastify/dist/ReactToastify.css";
-
-
-
-import { getPackages } from "../api/content";
-
 import api from "../api/axios";
+import { getHero, getPackages, getSiteSettings } from "../api/content";
+import { useQuery } from "../hooks/useQuery";
+import { getHeroLayout } from "../utils/heroLayout";
 
+/* ============================================================
+   BRAND
+============================================================ */
+const BRAND_NAME = "Manyara Prive Vacations";
+const DEFAULT_BADGE = "Curated holidays, made simple";
 
+/* ============================================================
+   CAROUSEL SETTINGS
+============================================================ */
+const AUTOPLAY_MS = 5000;
+const FADE_MS = 1100;
+const ZOOM_MS = 8000;
+const REFRESH_MS = 60000;
+const CLOCK_MS = 30000;
+const MAX_SLIDES = 6;
+const FALLBACK_IMAGE = "/images/view1.webp";
 
-// =========================================================
+/* Written by HeroManage after every save so other tabs revalidate. */
+const HERO_UPDATED_KEY = "manyara:hero-updated";
 
-// Package type configuration
+const getPackageUrl = (pkg, id) => `/packages/${pkg?.slug || pkg?.id || id}`;
 
-// =========================================================
+/* ============================================================
+   WHY BOOK WITH US (edit these three lines to match your business)
+============================================================ */
+const HIGHLIGHTS = [
+  { icon: Compass, label: "Curated itineraries" },
+  { icon: Wallet, label: "Clear, upfront pricing" },
+  { icon: Headset, label: "Support during your trip" },
+];
 
-
-
+/* ============================================================
+   PACKAGE TYPE CONFIG (keys match backend PackageTypeEnum)
+============================================================ */
 const PACKAGE_TYPE_CONFIG = {
-
- family: {
-
-  label: "Family Holidays",
-
-  icon: Sparkles,
-
-  fallbackDescription: "Memorable holidays for the whole family",
-
- },
-
-
-
- pilgrimage: {
-
-  label: "Temples & Pilgrimage",
-
-  icon: Landmark,
-
-  fallbackDescription: "Spiritual journeys & temple tours",
-
- },
-
-
-
- beach: {
-
-  label: "Beach Holidays",
-
-  icon: Waves,
-
-  fallbackDescription: "Relaxing beaches, islands & coastal escapes",
-
- },
-
-
-
- mountains_adventure: {
-
-  label: "Mountains & Adventures",
-
-  icon: Mountain,
-
-     fallbackDescription: "Mountains, valleys & adventure",
-
- },
-
-
-
- romantic: {
-
-     label: "Romantic Getaways",
-
-     icon: Heart,
-
-     fallbackDescription: "Beautiful escapes for couples",
-
- },
-
-
-
- international: {
-
-     label: "International",
-
-     icon: Globe2,
-
-     fallbackDescription: "Explore the world beyond India",
-
- },
-
-
-
- wildlife_nature: {
-
-     label: "Wildlife & Nature",
-
-     icon: Mountain,
-
-     fallbackDescription:
-
-      "Wildlife, forests & beautiful natural escapes",
-
- },
-
+  family: {
+    label: "Family Holidays",
+    short: "Family",
+    icon: Sparkles,
+    description: "Memorable holidays designed for the whole family.",
+  },
+  pilgrimage: {
+    label: "Temples & Pilgrimage",
+    short: "Pilgrimage",
+    icon: Landmark,
+    description: "Spiritual journeys and meaningful temple tours.",
+  },
+  beach: {
+    label: "Beach Holidays",
+    short: "Beaches",
+    icon: Waves,
+    description: "Relaxing beaches, islands and coastal escapes.",
+  },
+  mountains_adventure: {
+    label: "Mountains & Adventures",
+    short: "Mountains",
+    icon: Mountain,
+    description: "Mountains, valleys and unforgettable adventures.",
+  },
+  romantic: {
+    label: "Romantic Getaways",
+    short: "Romantic",
+    icon: Heart,
+    description: "Beautiful escapes designed for couples.",
+  },
+  international: {
+    label: "International",
+    short: "International",
+    icon: Globe2,
+    description: "Discover destinations beyond India.",
+  },
+  wildlife_nature: {
+    label: "Wildlife & Nature",
+    short: "Wildlife",
+    icon: TreePine,
+    description: "Wildlife, forests and beautiful natural escapes.",
+  },
 };
-
-
-
-// =========================================================
-
-// Priority travel styles
-
-// =========================================================
-
-
-
-const PRIORITY_PACKAGE_TYPES = [
-
- "family",
-
- "pilgrimage",
-
- "beach",
-
- "mountains_adventure",
-
-];
-
-
-
-const REMAINING_PACKAGE_TYPES = [
-
- "romantic",
-
- "international",
-
- "wildlife_nature",
-
-];
-
-
-
-// =========================================================
-
-// Empty custom enquiry form
-
-// =========================================================
-
-
 
 const EMPTY_CUSTOM_FORM = {
-
- name: "",
-
- phone: "",
-
- destination: "",
-
- package_type: "",
-
- travellers: "1",
-
- travel_date: "",
-
- message: "",
-
+  name: "",
+  phone: "",
+  destination: "",
+  package_type: "",
+  travellers: "1",
+  travel_date: "",
+  message: "",
 };
 
-
-
-// =========================================================
-
-// Local date for <input type="date">
-
-// =========================================================
-
-
-
-function getTodayForDateInput() {
-
-    const now = new Date();
-
-
-
-    const localDate = new Date(
-
-     now.getTime() - now.getTimezoneOffset() * 60000
-
-    );
-
-
-
-    return localDate.toISOString().split("T")[0];
-
-}
-
-
-
-// =========================================================
-
-// Normalize package type
-
-// =========================================================
-
-
-
-function getPackageType(pkg) {
-
-    return String(pkg?.package_type || pkg?.type || "")
-
-     .trim()
-
-     .toLowerCase();
-
-}
-
-
-
-// =========================================================
-
-// Package type config
-
-// =========================================================
-
-
-
-function getPackageTypeConfig(type) {
-
-    return (
-
-        PACKAGE_TYPE_CONFIG[type] || {
-
-            label: "Travel Package",
-
-            icon: Sparkles,
-
-            fallbackDescription:
-
-             "Explore beautiful destinations with On a Trip Holidays",
-
-        }
-
-    );
-
-}
-
-
-
-// =========================================================
-
-// Safely get package image
-
-// =========================================================
-
-
-
-function getPackageImage(pkg) {
-
-    if (Array.isArray(pkg?.images) && pkg.images.length > 0) {
-
-        const firstImage = pkg.images[0];
-
-
-
-        if (typeof firstImage === "string") {
-
-            return firstImage;
-
-        }
-
-
-
-        if (firstImage?.url) {
-
-            return firstImage.url;
-
-        }
-
-    }
-
-
-
-    return (
-
-        pkg?.image?.url ||
-
-        pkg?.cover_image?.url ||
-
-        pkg?.featured_image?.url ||
-
-        pkg?.thumbnail?.url ||
-
-        (typeof pkg?.image === "string" ? pkg.image : null) ||
-
-        (typeof pkg?.cover_image === "string"
-
-         ? pkg.cover_image
-
-         : null) ||
-
-        (typeof pkg?.featured_image === "string"
-
-         ? pkg.featured_image
-
-         : null) ||
-
-        "/images/package-placeholder.webp"
-
-    );
-
-}
-
-
-
-// =========================================================
-
-// Package description
-
-// =========================================================
-
-
-
-function getPackageDescription(pkg, fallback) {
-
-    if (pkg?.destination) {
-
-        return pkg.destination;
-
-    }
-
-
-
-    if (pkg?.short_description) {
-
-        return pkg.short_description;
-
-    }
-
-
-
-    if (pkg?.description) {
-
-        return pkg.description.length > 90
-
-         ? `${pkg.description.slice(0, 90)}...`
-
-         : pkg.description;
-
-    }
-
-
-
-    return fallback;
-
-}
-
-
-
-// =========================================================
-
-// Package key
-
-// =========================================================
-
-
-
-function getPackageKey(pkg) {
-
-    return (
-
-        pkg?.id ||
-
-        pkg?.slug ||
-
-        `${pkg?.title || "package"}-${pkg?.destination || ""}`
-
-    );
-
-}
-
-
-
-// =========================================================
-
-// Published package
-
-// =========================================================
-
-
+/* ============================================================
+   THEME CLASSES (Tailwind tokens from tailwind.config.js)
+============================================================ */
+const INPUT_CLASS =
+  "w-full rounded-xl border border-border bg-input px-4 py-3 text-sm text-text-dark outline-none transition placeholder:text-placeholder focus:border-primary focus:ring-2 focus:ring-primary/20 disabled:cursor-not-allowed disabled:bg-surface";
+const LABEL_CLASS = "mb-1.5 block text-sm font-semibold text-text-dark";
+
+/* Round side arrows (>= sm). */
+const ICON_BUTTON =
+  "flex h-10 w-10 shrink-0 items-center justify-center rounded-full border border-white/25 bg-ink/40 text-white backdrop-blur transition hover:bg-ink/60 focus:outline-none focus-visible:ring-2 focus-visible:ring-white";
+
+/* Pause is an accessibility control, not a main action: quiet ghost style,
+   but still a 40px touch target. */
+const PAUSE_BUTTON =
+  "-mr-2 flex h-10 w-10 shrink-0 items-center justify-center rounded-full text-white/80 transition-colors hover:bg-white/15 hover:text-white focus:outline-none focus-visible:ring-2 focus-visible:ring-white sm:mr-0";
+
+/*
+ * One button system for slide actions: same height, radius, type and
+ * focus ring everywhere.
+ *   BTN_PRIMARY - solid accent (main actions)
+ *   BTN_GLASS   - translucent white (secondary actions)
+ */
+const BTN =
+  "inline-flex h-12 items-center justify-center gap-2 rounded-full px-7 text-sm font-semibold tracking-wide transition-colors duration-300 focus:outline-none focus-visible:ring-2 focus-visible:ring-white focus-visible:ring-offset-2 focus-visible:ring-offset-ink disabled:cursor-not-allowed disabled:opacity-70";
+const BTN_PRIMARY = `${BTN} bg-accent text-white shadow-brand hover:bg-accent-hover`;
+const BTN_GLASS = `${BTN} border border-white/40 bg-white/10 text-white backdrop-blur hover:bg-white/20`;
+
+/* Hides the scrollbar on the swipeable chip row. */
+const NO_SCROLLBAR =
+  "[scrollbar-width:none] [-ms-overflow-style:none] [&::-webkit-scrollbar]:hidden";
+
+/*
+ * Layout, top to bottom:
+ *   copy region (slide text, placed by the admin's content position)
+ *   -> centred block: pager, search, category chips, plan button, highlights
+ */
+
+/* ============================================================
+   HELPERS
+============================================================ */
+const cleanText = (value) => (typeof value === "string" ? value.trim() : "");
+
+const normalizeDestination = (value) =>
+  String(value || "")
+    .trim()
+    .replace(/\s+/g, " ")
+    .toLowerCase();
+
+const getImageUrl = (image) =>
+  typeof image === "string" ? image.trim() : cleanText(image?.url);
+
+const getPackageTitle = (pkg) =>
+  cleanText(pkg?.title) || cleanText(pkg?.name) || cleanText(pkg?.package_name);
+
+const padNumber = (value) => String(value).padStart(2, "0");
 
 function isPublishedPackage(pkg) {
+  const status = String(pkg?.status ?? "")
+    .trim()
+    .toLowerCase();
+  return status === "" || status === "published" || pkg?.is_published === true;
+}
 
-    const status = String(pkg?.status ?? "")
+function getTodayForDateInput() {
+  const now = new Date();
+  const local = new Date(now.getTime() - now.getTimezoneOffset() * 60000);
+  return local.toISOString().split("T")[0];
+}
 
+const toTime = (value) => {
+  const time = value ? new Date(value).getTime() : NaN;
+  return Number.isNaN(time) ? null : time;
+};
+
+function isSlideLive(slide, now) {
+  if (slide.startsAt !== null && slide.startsAt > now) return false;
+  if (slide.endsAt !== null && slide.endsAt < now) return false;
+  return true;
+}
+
+function normalizeSlides(data, now) {
+  const list = Array.isArray(data)
+    ? data
+    : Array.isArray(data?.items)
+      ? data.items
+      : Array.isArray(data?.slides)
+        ? data.slides
+        : [];
+
+  return list
+    .map((item, index) => {
+      const type = String(item?.package_type || "")
         .trim()
-
         .toLowerCase();
+      const packageId = Number(item?.package_id);
 
-    return (
-
-     status === "" ||
-
-     status === "published" ||
-
-     pkg?.is_published === true
-
-    );
-
+      return {
+        id: item?.id ?? `slide-${index}`,
+        order: Number.isFinite(Number(item?.display_order))
+          ? Number(item.display_order)
+          : 999,
+        active: item?.is_active !== false,
+        image: getImageUrl(item?.image),
+        imageMobile: getImageUrl(item?.image_mobile),
+        position: /^[a-z0-9% ]{1,30}$/i.test(cleanText(item?.image_position))
+          ? cleanText(item.image_position)
+          : "center",
+        contentPosition: cleanText(item?.content_position),
+        overlayStrength: cleanText(item?.overlay_strength),
+        badge: cleanText(item?.badge),
+        headline: cleanText(item?.headline),
+        subtext: cleanText(item?.subtext),
+        packageType: PACKAGE_TYPE_CONFIG[type] ? type : "",
+        packageId:
+          Number.isInteger(packageId) && packageId > 0 ? packageId : null,
+        offerText: cleanText(item?.offer_text),
+        startsAt: toTime(item?.starts_at),
+        endsAt: toTime(item?.ends_at),
+      };
+    })
+    .filter(
+      (slide) =>
+        slide.active && slide.image && slide.headline && isSlideLive(slide, now),
+    )
+    .sort((a, b) => a.order - b.order)
+    .slice(0, MAX_SLIDES);
 }
 
-
-
-// =========================================================
-
-// Normalize destination
-
-// =========================================================
-
-
-
-function normalizeDestination(value) {
-
-    return String(value || "")
-
-     .trim()
-
-     .replace(/\s+/g, " ")
-
-     .toLowerCase();
-
+function buildFallbackSlide(settings) {
+  return {
+    id: "default",
+    image: FALLBACK_IMAGE,
+    imageMobile: "",
+    position: "center",
+    contentPosition: "middle-center",
+    overlayStrength: "medium",
+    badge: DEFAULT_BADGE,
+    headline:
+      cleanText(settings?.homepage_headline) ||
+      "Journeys designed for the way you love to travel.",
+    subtext:
+      "Thoughtfully curated holidays for couples and families, planned with care from the first idea to the journey home.",
+    packageType: "",
+    packageId: null,
+    offerText: "",
+    startsAt: null,
+    endsAt: null,
+  };
 }
 
+function formatShortDate(time) {
+  return new Intl.DateTimeFormat("en-IN", {
+    day: "numeric",
+    month: "short",
+  }).format(new Date(time));
+}
 
+/* Which side the text sits on, read from the layout's text classes. */
+function getHorizontal(layout) {
+  if (layout.text.includes("text-center")) return "center";
+  if (layout.text.includes("text-right")) return "right";
+  return "left";
+}
 
-// =========================================================
+/* ============================================================
+   REDUCED MOTION
+============================================================ */
+function usePrefersReducedMotion() {
+  const [reduced, setReduced] = useState(
+    () =>
+      typeof window !== "undefined" &&
+      Boolean(window.matchMedia?.("(prefers-reduced-motion: reduce)").matches),
+  );
 
-// Hero skeleton
+  useEffect(() => {
+    const query = window.matchMedia?.("(prefers-reduced-motion: reduce)");
+    if (!query) return undefined;
+    const update = () => setReduced(query.matches);
+    update();
+    query.addEventListener("change", update);
+    return () => query.removeEventListener("change", update);
+  }, []);
 
-// =========================================================
+  return reduced;
+}
 
-
-
+/* ============================================================
+   SMALL COMPONENTS
+============================================================ */
 function Skeleton({ className = "" }) {
-
-    return (
-
-     <div
-
-         className={`animate-pulse rounded-lg bg-white/15 ${className}`}
-
-         aria-hidden="true"
-
-        />
-
-    );
-
-}
-
-
-
-// =========================================================
-
-// Travel style/category card
-
-//
-
-// IMPORTANT:
-
-// This is NOT an individual package card.
-
-//
-
-// Family -> /packages?type=family
-
-// Pilgrimage -> /packages?type=pilgrimage
-
-// etc.
-
-//
-
-// Clicking the card opens a listing page containing
-
-// all packages belonging to that travel type.
-
-// =========================================================
-
-
-function TravelStyleCard({ travelStyle }) {
-  if (!travelStyle) {
-    return null;
-  }
-
-  const { type, count, image } = travelStyle;
-
-  const config = getPackageTypeConfig(type);
-
-  if (!config) {
-    return null;
-  }
-
-  const Icon = config.icon;
-  const title = config.label;
-  const description = config.fallbackDescription;
-
-  const packageCountLabel =
-    count === 1
-      ? "1 package available"
-      : `${count} packages available`;
-
-  const packagesUrl =
-    `/packages?type=${encodeURIComponent(type)}`;
-
   return (
-    <Link
-      to={packagesUrl}
-      className="
-        group
-        relative
-        block
-        w-full
-        overflow-hidden
-        rounded-2xl
-        border
-        border-navy/10
-        bg-navy
-        shadow-sm
-        transition-all
-        duration-300
-        hover:-translate-y-0.5
-        hover:shadow-lg
-        focus:outline-none
-        focus:ring-2
-        focus:ring-accent/50
-        focus:ring-offset-2
-      "
-      aria-label={`View ${count} ${title} packages`}
-    >
-      {/* Background image */}
-      <div
-        className="
-          relative
-          h-[145px]
-          w-full
-          overflow-hidden
-          sm:h-[155px]
-          lg:h-[165px]
-        "
-      >
-        <img
-          src={image || "/images/package-placeholder.webp"}
-          alt={title}
-          loading="lazy"
-          decoding="async"
-          className="
-            absolute
-            inset-0
-            h-full
-            w-full
-            object-cover
-            transition-transform
-            duration-500
-            group-hover:scale-[1.04]
-          "
-          onError={(event) => {
-            if (
-              event.currentTarget.src.includes(
-                "package-placeholder.webp"
-              )
-            ) {
-              return;
-            }
-
-            event.currentTarget.src =
-              "/images/package-placeholder.webp";
-          }}
-        />
-
-        {/* Image readability overlay */}
-        <div
-          className="
-            absolute
-            inset-0
-            bg-gradient-to-t
-            from-black/85
-            via-black/45
-            to-black/10
-          "
-        />
-
-        {/* Content */}
-        <div
-          className="
-            absolute
-            inset-x-0
-            bottom-0
-            p-3.5
-            sm:p-4
-          "
-        >
-          <div className="flex items-end gap-3">
-
-            {/* Text */}
-            <div className="min-w-0 flex-1">
-
-              {/* Icon + package count */}
-              <div className="mb-1.5 flex items-center gap-2">
-                {Icon && (
-                  <span
-                    className="
-                      flex
-                      h-7
-                      w-7
-                      shrink-0
-                      items-center
-                      justify-center
-                      rounded-full
-                      bg-white/15
-                      text-white
-                      backdrop-blur-sm
-                    "
-                  >
-                    <Icon
-                      className="h-3.5 w-3.5"
-                      aria-hidden="true"
-                    />
-                  </span>
-                )}
-
-                <span
-                  className="
-                    text-[10px]
-                    font-semibold
-                    uppercase
-                    tracking-[0.08em]
-                    text-white/80
-                  "
-                >
-                  {packageCountLabel}
-                </span>
-              </div>
-
-              {/* Title */}
-              <h3
-                className="
-                  font-display
-                  text-lg
-                  font-semibold
-                  leading-tight
-                  text-white
-                  sm:text-xl
-                "
-              >
-                {title}
-              </h3>
-
-              {/* Description */}
-              <p
-                className="
-                  mt-1
-                  max-w-3xl
-                  text-xs
-                  leading-relaxed
-                  text-white/75
-                  sm:text-sm
-                  line-clamp-2
-                "
-              >
-                {description}
-              </p>
-            </div>
-
-            {/* Arrow */}
-            <span
-              className="
-                flex
-                h-8
-                w-8
-                shrink-0
-                items-center
-                justify-center
-                rounded-full
-                bg-white/15
-                text-white
-                backdrop-blur-sm
-                transition-all
-                duration-300
-                group-hover:translate-x-1
-                group-hover:bg-accent
-              "
-            >
-              <ChevronRight
-                className="h-4 w-4"
-                aria-hidden="true"
-              />
-            </span>
-          </div>
-        </div>
-      </div>
-    </Link>
+    <div
+      className={`animate-pulse rounded-xl bg-white/15 ${className}`}
+      aria-hidden="true"
+    />
   );
 }
 
-
-
-// =========================================================
-
-// Package card skeleton
-
-// =========================================================
-
-
-
-function PackageCardSkeleton() {
-
- return (
-
-  <div
-
-   className="
-
-       flex
-       flex-col
-       items-stretch
-       gap-3
-       rounded-2xl
-       border
-       border-navy/10
-       bg-white
-       p-3
-
-   "
-
-   aria-hidden="true"
-
-  >
-
-   <div
-
-       className="
-
-        w-full
-        h-24
-        sm:h-20
-
-        shrink-0
-
-        rounded-xl
-
-        bg-navy/10
-
-        animate-pulse
-
-          "
-
-         />
-
-
-
-         <div className="flex-1 min-w-0 space-y-3">
-
-          <div className="h-5 w-24 rounded-full bg-navy/10 animate-pulse" />
-
-
-
-          <div className="h-4 w-4/5 rounded bg-navy/10 animate-pulse" />
-
-
-
-          <div className="h-3 w-full rounded bg-navy/10 animate-pulse" />
-
-
-
-          <div className="h-3 w-28 rounded bg-navy/10 animate-pulse" />
-
-         </div>
-
-
-
-         <div className="h-5 w-5 rounded-full bg-navy/10 animate-pulse" />
-
-     </div>
-
-    );
-
-}
-
-
-
-// =========================================================
-
-// Custom package request modal
-
-//
-
-// Enquiry payload:
-
-//
-
-// name
-
-// phone
-
-// destination
-
-// package_type
-
-// travellers
-
-// travel_date
-
-// message
-
-//
-
-// package_id and batch_id intentionally remain null/
-
-// omitted because this is a custom enquiry.
-
-// =========================================================
-
-
-
-function CustomPackageModal({
-
- open,
-
- destination,
-
- onClose,
-
-}) {
-
- const [form, setForm] = useState({
-
-     ...EMPTY_CUSTOM_FORM,
-
-     destination: destination || "",
-
- });
-
-
-
- const [submitting, setSubmitting] = useState(false);
-
- const [success, setSuccess] = useState(false);
-
-
-
- // Hard lock prevents rapid double-click / duplicate
-
- // submit events before React re-renders.
-
- const submitLockRef = useRef(false);
-
-
-
- const today = getTodayForDateInput();
-
-
-
-
- const [errors, setErrors] = useState({});
-
-const [touched, setTouched] = useState({});
-
-
-
-const currentYear = new Date().getFullYear();
-
-const nextYear = currentYear + 1;
-
-
-
-const validateField = (name, value) => {
-
-const trimmedValue = String(value ?? "").trim();
-
-
-
-
-switch (name) {
-
- case "name":
-
-  if (!trimmedValue) {
-
-      return "Please enter your name.";
-
-  }
-
-
-
-  if (!/^[A-Za-z]+(?:[ '-][A-Za-z]+)*$/.test(trimmedValue)) {
-
-      return "Name should contain characters only.";
-
-  }
-
-
-
-  return "";
-
-
-
- case "phone":
-
-  if (!trimmedValue) {
-
-      return "Please enter your phone number.";
-
-  }
-
-
-
-  if (!/^\d+$/.test(trimmedValue)) {
-
-      return "Phone number should contain numbers only.";
-
- }
-
-
-
- if (trimmedValue.length !== 10) {
-
-     return "Phone number should contain 10 digits.";
-
- }
-
-
-
- if (!/^[6-9]\d{9}$/.test(trimmedValue)) {
-
-     return "Please enter a valid phone number.";
-
- }
-
-
-
- return "";
-
-
-
-case "destination":
-
- if (!trimmedValue) {
-
-     return "Please enter your destination.";
-
- }
-
-
-
- if (!/^[A-Za-z0-9]+(?:[ ,.'-][A-Za-z0-9]+)*$/.test(trimmedValue)) {
-
-     return "Please enter a valid destination.";
-
- }
-
-
-
- return "";
-
-
-
-case "package_type":
-
- if (!trimmedValue) {
-
-     return "Please select a package type.";
-
- }
-
- return "";
-
-
-
-case "travellers":
-
- if (!trimmedValue) {
-
-     return "Please enter the number of travellers.";
-
- }
-
-
-
- if (!/^\d+$/.test(trimmedValue)) {
-
-     return "Travellers must be a whole number. Decimals are not allowed.";
-
- }
-
-
-
- if (Number(trimmedValue) < 1) {
-
-     return "There must be at least 1 traveller.";
-
- }
-
-
-
- return "";
-
-
-
-case "travel_date": {
-
- if (!trimmedValue) {
-
-     return "Please select your travel date.";
-
- }
-
-
-
- if (!/^\d{4}-\d{2}-\d{2}$/.test(trimmedValue)) {
-
-     return "Please enter a valid travel date.";
-
- }
-
-
-
- const selectedDate = new Date(`${trimmedValue}T00:00:00`);
-
-         if (Number.isNaN(selectedDate.getTime())) {
-
-             return "Please enter a valid travel date.";
-
-         }
-
-
-
-         const selectedYear = selectedDate.getFullYear();
-
-
-
-         if (selectedYear !== currentYear && selectedYear !== nextYear) {
-
-             return `Travel date must be in ${currentYear} or ${nextYear}.`;
-
-         }
-
-
-
-         const todayDate = new Date();
-
-         todayDate.setHours(0, 0, 0, 0);
-
-
-
-         if (selectedDate < todayDate) {
-
-             return "Travel date cannot be in the past.";
-
-         }
-
-
-
-         return "";
-
-     }
-
-
-
-     default:
-
-         return "";
-
- }
-
-};
-
-
-
-const validateForm = () => {
-
- const fieldsToValidate = [
-
-     "name",
-
-     "phone",
-
-     "destination",
-
-     "package_type",
-
-     "travellers",
-
-     "travel_date",
-
- ];
-
-const newErrors = {};
-
-
-
- fieldsToValidate.forEach((field) => {
-
-     const error = validateField(field, form[field]);
-
-
-
-     if (error) {
-
-         newErrors[field] = error;
-
-     }
-
- });
-
-
-
- setErrors(newErrors);
-
-
-
- setTouched((prev) => ({
-
-     ...prev,
-
-     ...Object.fromEntries(
-
-         fieldsToValidate.map((field) => [field, true])
-
-     ),
-
- }));
-
-
-
- return Object.keys(newErrors).length === 0;
-
-};
-
-
-
-
- // =======================================================
-
- // Reset form whenever modal opens
-
- // =======================================================
-
-
-
- useEffect(() => {
-
- if (!open) {
-
-     return;
-
- }
-
-
-
- setForm({
-
-     ...EMPTY_CUSTOM_FORM,
-
-     destination: destination || "",
-
- });
-
-
-
- setSubmitting(false);
-
- setSuccess(false);
- setErrors({});
- setTouched({});
-
-
-
- submitLockRef.current = false;
-
-}, [open, destination]);
-
-
-
-// =======================================================
-
-// Escape + body lock
-
-// =======================================================
-
-
-
-useEffect(() => {
-
- if (!open) {
-
-     return;
-
- }
-
-
-
- const handleEscape = (event) => {
-
-     if (event.key === "Escape") {
-
-       if (!submitting) {
-
-        onClose();
-
-         }
-
-     }
-
-    };
-
-
-
-    document.addEventListener("keydown", handleEscape);
-
-
-
-    document.body.style.overflow = "hidden";
-
-
-
-    return () => {
-
-     document.removeEventListener(
-
-         "keydown",
-
-         handleEscape
-
-     );
-
-
-
-     document.body.style.overflow = "";
-
-    };
-
-}, [open, onClose, submitting]);
-
-
-
-if (!open) {
-
-    return null;
-
-}
-
-
-
-// =======================================================
-
-// Input change
-
-// =======================================================
-
-
-
-const handleChange = (event) => {
-    const { name, value } = event.target;
-
-    setForm((previous) => ({
-        ...previous,
-        [name]: value,
-    }));
-
-    setTouched((previous) => ({
-        ...previous,
-        [name]: true,
-    }));
-
-    const error = validateField(name, value);
-
-    setErrors((previous) => ({
-        ...previous,
-        [name]: error,
-    }));
-};
-
-
-// =======================================================
-
-// Submit
-
-// =======================================================
-
-
-
-const handleSubmit = async (event) => {
- event.preventDefault();
-
- // -----------------------------------------------------
- // HARD DUPLICATE PROTECTION
- // -----------------------------------------------------
- if (
-     submitLockRef.current ||
-     submitting ||
-     success
- ) {
-     return;
- }
-
- // Validate every required field before sending the request.
- if (!validateForm()) {
-     toast.error("Please correct the highlighted fields.");
-     return;
- }
-
- const name = form.name.trim();
- const phone = form.phone.trim();
- const selectedDestination = form.destination.trim();
- const packageType = form.package_type.trim();
- const travellers = Number(form.travellers);
- const travelDate = form.travel_date;
- const message = form.message.trim();
-
- // -----------------------------------------------------
- // Lock BEFORE API call.
-
-//
-
-// This prevents rapid double clicks from creating
-
-// multiple enquiry records.
-
-// -----------------------------------------------------
-
-
-
-submitLockRef.current = true;
-
-setSubmitting(true);
-
-try {
-
- await api.post("/enquiries", {
-
-  name,
-
-  phone,
-
-  destination: selectedDestination,
-
-  package_type: packageType,
-
-  travellers,
-
-  travel_date: travelDate,
-
-  message,
-
- });
-
-
-
- setSuccess(true);
-
-
-
- toast.success(
-
-  "Your travel request has been submitted successfully!"
-
- );
-
-} catch (error) {
-
- console.error(
-
-  "Custom package enquiry failed:",
-
-  error
-
- );
-
-
-
- // Unlock only after a failed request so the user
-
- // can retry.
-
- submitLockRef.current = false;
-
-
-
- const backendMessage =
-
-         error?.response?.data?.detail;
-
-
-
-     let errorMessage =
-
-         "Unable to submit your request right now. Please try again.";
-
-
-
-     if (Array.isArray(backendMessage)) {
-
-         errorMessage = backendMessage
-
-          .map(
-
-              (item) =>
-
-               item?.msg ||
-
-               item?.message ||
-
-               "Invalid enquiry details."
-
-          )
-
-          .join(", ");
-
-     } else if (
-
-         typeof backendMessage === "string"
-
-     ){
-
-         errorMessage = backendMessage;
-
-     }
-
-
-
-     toast.error(errorMessage);
-
- } finally {
-
-     setSubmitting(false);
-
- }
-
-};
-
-
-
-return (
-
- <div
-
-className="
-
-    fixed
-
-    inset-0
-
-    z-[100]
-
-    flex
-
-    items-center
-
-    justify-center
-
-    bg-black/60
-
-    backdrop-blur-sm
-
-    p-4
-
-"
-
-role="dialog"
-
-aria-modal="true"
-
-aria-labelledby="custom-package-title"
-
-onMouseDown={(event) => {
-
-    if (
-
-        event.target === event.currentTarget &&
-
-        !submitting
-
-    ){
-
-        onClose();
-
-    }
-
-}}
-
->
-
-<div
-
-    className="
-
-        relative
-
-        w-full
-
-        max-w-lg
-
-    max-h-[90vh]
-
-    overflow-y-auto
-
-    rounded-3xl
-
-    bg-ivory
-
-    p-5
-
-    sm:p-7
-
-    shadow-2xl
-
-"
-
->
-
-{/* Close */}
-
-
-
-<button
-
-    type="button"
-
-    onClick={onClose}
-
-    disabled={submitting}
-
-    className="
-
-     absolute
-
-     right-4
-
-     top-4
-
-     flex
-
-     h-9
-
-     w-9
-
-     items-center
-
-     justify-center
-
-     rounded-full
-
-     bg-navy/5
-
-     text-navy/60
-
-     transition
-
-     hover:bg-navy/10
-
-     hover:text-navy
-
-     disabled:cursor-not-allowed
-
-     disabled:opacity-50
-
-     focus:outline-none
-
-     focus:ring-2
-
-     focus:ring-accent/40
-
- "
-
- aria-label="Close custom package form"
-
->
-
- <X className="h-5 w-5" />
-
-</button>
-
-
-
-{/* =================================================
-
-     SUCCESS
-
-     ================================================= */}
-
-
-
-{success ? (
-
- <div className="py-8 text-center">
-
-     <div
-
-      className="
-
-       mx-auto
-
-       flex
-
-       h-16
-
-       w-16
-
-       items-center
-
-       justify-center
-
-       rounded-full
-
-     bg-green-100
-
-     text-green-600
-
- "
-
->
-
- <CheckCircle2 className="h-8 w-8" />
-
-</div>
-
-
-
-<h2
-
- className="
-
-     mt-5
-
-     font-display
-
-     text-2xl
-
-     sm:text-3xl
-
-     font-semibold
-
-     text-navy
-
- "
-
->
-
- Request received
-
-</h2>
-
-
-
-<p
-
- className="
-
-     mx-auto
-
-     mt-3
-
-     max-w-sm
-
-     text-sm
-
-     leading-relaxed
-
-     text-navy/60
-
-      "
-
-  >
-
-      Thank you. Our travel team will review
-
-      your request and contact you soon.
-
-  </p>
-
-
-
-  <button
-
-      type="button"
-
-      onClick={onClose}
-
-      className="
-
-          mt-6
-
-          rounded-xl
-
-          bg-accent
-
-          px-6
-
-          py-3
-
-          text-sm
-
-          font-semibold
-
-          text-white
-
-          transition
-
-          hover:bg-accent-hover
-
-      "
-
-  >
-
-      Done
-
-  </button>
-
- </div>
-
-):(
-
- <>
-
-  {/* =================================================
-
-  HEADER
-
-  ================================================= */}
-
-
-
-<div className="pr-10">
-
-<div className="flex items-center gap-3">
-
-   <div
-
-    className="
-
-        flex
-
-        h-11
-
-        w-11
-
-        shrink-0
-
-        items-center
-
-        justify-center
-
-        rounded-2xl
-
-        bg-accent/10
-
-        text-accent
-
-    "
-
-   >
-
-    <PlaneTakeoff className="h-5 w-5" />
-
-   </div>
-
-
-
-   <h2
-
-    id="custom-package-title"
-
-    className="
-
-        font-display
-
-        text-2xl
-
-        font-semibold
-
-        text-navy
-
-           sm:text-3xl
-
-       "
-
-      >
-
-       Plan a custom trip
-
-      </h2>
-
-  </div>
-
-
-
- <p
-
-  className="
-
-      mt-3
-
-      text-sm
-
-      leading-relaxed
-
-      text-navy/60
-
-  "
-
- >
-
-  This destination is not currently
-
-  available as a package. Tell us what
-
-  you are looking for and our team can
-
-  help create a customized trip.
-
- </p>
-
-</div>
-
-
-
-{/* =================================================
-
-  FORM
-
-  ================================================= */}
-
-
-
-<form
-
- onSubmit={handleSubmit}
-
-className="mt-6 space-y-4"
-
-noValidate
-
->
-
-{/* Name */}
-
-
-
-<div>
-
-    <label
-
-     htmlFor="custom-name"
-
-     className="
-
-         mb-1.5
-
-         block
-
-         text-sm
-
-         font-semibold
-
-         text-navy
-
-     "
-
+/*
+ * Buttons configured in HeroManage:
+ *   package_type -> "Explore <Category>" button (/packages?type=...)
+ *   package_id   -> "View <Package>" button (specific package)
+ */
+function SlideActions({ slide, packageById, packagesLoading, align }) {
+  const config = PACKAGE_TYPE_CONFIG[slide.packageType];
+  const pkg = slide.packageId ? packageById.get(slide.packageId) : null;
+
+  // Hide the package button when the package is no longer published.
+  const showPackage = slide.packageId && (pkg || packagesLoading);
+
+  if (!config && !showPackage) return null;
+
+  const CategoryIcon = config?.icon;
+
+  return (
+    <div
+      className={`flex w-full flex-col items-stretch gap-3 sm:w-auto sm:flex-row sm:items-center ${align}`}
     >
-
-     Name
-
-    </label>
-
-
-
-    <input
-
-     id="custom-name"
-
-     name="name"
-
-     type="text"
-
-     value={form.name}
-
-     onChange={handleChange}
-
-     placeholder="Enter your name"
-
-     autoComplete="name"
-
-     disabled={submitting}
-
-     required
-
-     className="
-
-      w-full
-
-      rounded-xl
-
-      border
-
-      border-navy/15
-
-      bg-white
-
-      px-4
-
-      py-3
-
-      text-sm
-
-      text-navy
-
-      outline-none
-
-      transition
-
-      placeholder:text-navy/35
-
-      focus:border-accent/50
-
-      focus:ring-2
-
-      focus:ring-accent/10
-
-      disabled:cursor-not-allowed
-
-      disabled:bg-navy/5
-
-  "
-
- />
-
-    {touched.name && errors.name && (
-      <p className="mt-1.5 text-xs font-medium text-red-500">
-        {errors.name}
-      </p>
-    )}
-
-</div>
-
-
-
-{/* Phone */}
-
-
-
-<div>
-
- <label
-
-  htmlFor="custom-phone"
-
- className="
-
-     mb-1.5
-
-     block
-
-     text-sm
-
-     font-semibold
-
-     text-navy
-
- "
-
->
-
- Phone number
-
-</label>
-
-
-
-<input
-
- id="custom-phone"
-
- name="phone"
-
- type="tel"
-
- value={form.phone}
-
- onChange={handleChange}
-
- placeholder="Enter your phone number"
-
- autoComplete="tel"
-
- inputMode="numeric"
-
- maxLength={10}
-
- disabled={submitting}
-
- required
-
- className="
-
-     w-full
-
-     rounded-xl
-
-     border
-
-     border-navy/15
-
-     bg-white
-
-      px-4
-
-      py-3
-
-      text-sm
-
-      text-navy
-
-      outline-none
-
-      transition
-
-      placeholder:text-navy/35
-
-      focus:border-accent/50
-
-      focus:ring-2
-
-      focus:ring-accent/10
-
-      disabled:cursor-not-allowed
-
-      disabled:bg-navy/5
-
-  "
-
- />
-
-    {touched.phone && errors.phone && (
-      <p className="mt-1.5 text-xs font-medium text-red-500">
-        {errors.phone}
-      </p>
-    )}
-
-</div>
-
-
-
-{/* Destination */}
-
-
-
-<div>
-
- <label
-
-  htmlFor="custom-destination"
-
-  className="
-
-      mb-1.5
-
-      block
-
-      text-sm
-
-      font-semibold
-
-      text-navy
-
-  "
-
->
-
- Destination
-
-</label>
-
-
-
-<input
-
- id="custom-destination"
-
- name="destination"
-
- type="text"
-
- value={form.destination}
-
- onChange={handleChange}
-
- placeholder="Enter your destination"
-
- disabled={submitting}
-
- required
-
- className="
-
-    w-full
-
-    rounded-xl
-
-    border
-
-    border-navy/15
-
-    bg-white
-
-    px-4
-
-    py-3
-
-    text-sm
-
-    text-navy
-
-    outline-none
-
-    transition
-
-    placeholder:text-navy/35
-
-    focus:border-accent/50
-
-    focus:ring-2
-
-      focus:ring-accent/10
-
-      disabled:cursor-not-allowed
-
-      disabled:bg-navy/5
-
-  "
-
- />
-
-    {touched.destination && errors.destination && (
-      <p className="mt-1.5 text-xs font-medium text-red-500">
-        {errors.destination}
-      </p>
-    )}
-
-</div>
-
-
-
-{/* Package Type */}
-
-
-
-<div>
-
- <label
-
-  htmlFor="custom-package-type"
-
-  className="
-
-      mb-1.5
-
-      block
-
-      text-sm
-
-      font-semibold
-
-      text-navy
-
-  "
-
- >
-
-  Package type
-
- </label>
-
-
-
- <select
-
-  id="custom-package-type"
-
-  name="package_type"
-
-  value={form.package_type}
-
-  onChange={handleChange}
-
-disabled={submitting}
-
-required
-
-className="
-
-    w-full
-
-    rounded-xl
-
-    border
-
-    border-navy/15
-
-    bg-white
-
-    px-4
-
-    py-3
-
-    text-sm
-
-    text-navy
-
-    outline-none
-
-    transition
-
-    focus:border-accent/50
-
-    focus:ring-2
-
-    focus:ring-accent/10
-
-    disabled:cursor-not-allowed
-
-    disabled:bg-navy/5
-
-"
-
->
-
-<option value="">
-
-    Select package type
-
-</option>
-
-
-
-{Object.entries(
-
-    PACKAGE_TYPE_CONFIG
-
-).map(([value, config]) => (
-
-   <option
-
-       key={value}
-
-       value={value}
-
-   >
-
-       {config.label}
-
-   </option>
-
-  ))}
-
- </select>
-
-
-    {touched.package_type && errors.package_type && (
-      <p className="mt-1.5 text-xs font-medium text-red-500">
-        {errors.package_type}
-      </p>
-    )}
-</div>
-
-
-
-{/* Travellers + Travel Date */}
-
-
-
-<div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-
- {/* Travellers */}
-
-
-
- <div>
-
-  <label
-
-   htmlFor="custom-travellers"
-
-   className="
-
-       mb-1.5
-
-       block
-
-       text-sm
-
-       font-semibold
-
-       text-navy
-
-   "
-
-  >
-
-   Travellers
-
-  </label>
-
-<input
-
- id="custom-travellers"
-
- name="travellers"
-
- type="text"
-
- value={form.travellers}
-
- onChange={handleChange}
-
- placeholder="Number"
-
- inputMode="numeric"
-  pattern="[0-9]*"
-  disabled={submitting}
-
- required
-
- className="
-
-  w-full
-
-  rounded-xl
-
-  border
-
-  border-navy/15
-
-  bg-white
-
-  px-4
-
-  py-3
-
-  text-sm
-
-  text-navy
-
-  outline-none
-
-  transition
-
-  placeholder:text-navy/35
-
-  focus:border-accent/50
-
-  focus:ring-2
-
-  focus:ring-accent/10
-
-      disabled:cursor-not-allowed
-
-      disabled:bg-navy/5
-
-  "
-
- />
-
-    {touched.travellers && errors.travellers && (
-      <p className="mt-1.5 text-xs font-medium text-red-500">
-        {errors.travellers}
-      </p>
-    )}
-
-
-</div>
-
-
-
-{/* Travel Date */}
-
-
-
-<div>
-
- <label
-
-  htmlFor="custom-travel-date"
-
-  className="
-
-      mb-1.5
-
-      block
-
-      text-sm
-
-      font-semibold
-
-      text-navy
-
-  "
-
- >
-
-  Travel date
-
- </label>
-
-
-
- <input
-
-  id="custom-travel-date"
-
-  name="travel_date"
-
-  type="date"
-
-  min={today}
-
-  value={form.travel_date}
-
-   onChange={handleChange}
-
-   disabled={submitting}
-
-   required
-
-   className="
-
-       w-full
-
-       rounded-xl
-
-       border
-
-       border-navy/15
-
-       bg-white
-
-       px-4
-
-       py-3
-
-       text-sm
-
-       text-navy
-
-       outline-none
-
-       transition
-
-       focus:border-accent/50
-
-       focus:ring-2
-
-       focus:ring-accent/10
-
-       disabled:cursor-not-allowed
-
-       disabled:bg-navy/5
-
-   "
-
-  />
-
-    {touched.travel_date && errors.travel_date && (
-      <p className="mt-1.5 text-xs font-medium text-red-500">
-        {errors.travel_date}
-      </p>
-    )}
-
- </div>
-
-</div>
-
-
-
-{/* Message */}
-
-
-
-<div>
-
-<label
-
- htmlFor="custom-message"
-
- className="
-
-     mb-1.5
-
-     block
-
-     text-sm
-
-     font-semibold
-
-     text-navy
-
- "
-
->
-
- Message
-
-</label>
-
-
-
-<textarea
-
- id="custom-message"
-
- name="message"
-
- value={form.message}
-
- onChange={handleChange}
-
- rows={4}
-
- disabled={submitting}
-
- placeholder="Tell us about your trip requirements..."
-
- className="
-
-     w-full
-
-     resize-none
-
-     rounded-xl
-
-     border
-
-     border-navy/15
-
-     bg-white
-
-         px-4
-
-         py-3
-
-         text-sm
-
-         text-navy
-
-         outline-none
-
-         transition
-
-         placeholder:text-navy/35
-
-         focus:border-accent/50
-
-         focus:ring-2
-
-         focus:ring-accent/10
-
-         disabled:cursor-not-allowed
-
-         disabled:bg-navy/5
-
-     "
-
- />
-
-</div>
-
-
-
-{/* Submit */}
-
-
-
-<button
-
- type="submit"
-
- disabled={
-
-     submitting ||
-
-     submitLockRef.current
-
- }
-
- className="
-
-     flex
-
-     w-full
-
-     items-center
-
-    justify-center
-
-    gap-2
-
-    rounded-xl
-
-    bg-accent
-
-    px-5
-
-    py-3.5
-
-    text-sm
-
-    font-semibold
-
-    text-white
-
-    transition-all
-
-    hover:bg-accent-hover
-
-    disabled:cursor-not-allowed
-
-    disabled:opacity-70
-
-    focus:outline-none
-
-    focus:ring-2
-
-    focus:ring-accent/40
-
-    focus:ring-offset-2
-
-"
-
->
-
-{submitting ? (
-
+      {config && (
+        <Link
+          to={`/packages?type=${encodeURIComponent(slide.packageType)}`}
+          className={BTN_PRIMARY}
+        >
+          <CategoryIcon className="h-4 w-4 shrink-0" aria-hidden="true" />
+          <span className="truncate">Explore {config.label}</span>
+          <ArrowRight className="h-4 w-4 shrink-0" aria-hidden="true" />
+        </Link>
+      )}
+
+      {showPackage && (
+        <Link
+          to={getPackageUrl(pkg, slide.packageId)}
+          className={`${BTN_GLASS} sm:max-w-[18rem]`}
+        >
+          <span className="truncate">
+            {pkg ? `View ${getPackageTitle(pkg) || "package"}` : "View package"}
+          </span>
+          <ArrowRight className="h-4 w-4 shrink-0" aria-hidden="true" />
+        </Link>
+      )}
+    </div>
+  );
+}
+
+function renderHeadline(text) {
+  const words = text.trim().split(/\s+/);
+  if (words.length < 3) return text;
+  const last = words.pop();
+  return (
     <>
-
-     <Loader2 className="h-4 w-4 animate-spin" />
-
-     Sending request...
-
+      {words.join(" ")}{" "}
+      <em className="font-medium italic text-champagne-light">{last}</em>
     </>
+  );
+}
 
-):(
+/*
+ * Slide copy cross-fades: the outgoing text fades out quickly, then the
+ * incoming text fades in with a small upward drift.
+ *
+ * Every slide shares one grid cell. Each slide places its own text block
+ * (top / middle / bottom x left / center / right) from the admin's
+ * content position. Long text is clamped so one slide cannot make the
+ * whole hero grow.
+ */
+function SlideCopy({
+  slide,
+  index,
+  count,
+  isActive,
+  reducedMotion,
+  packageById,
+  packagesLoading,
+}) {
+  const Heading = index === 0 ? "h1" : "h2";
+  const layout = getHeroLayout(slide.contentPosition, slide.overlayStrength);
+  const horizontal = getHorizontal(layout);
 
-    <>
+  const hasActions =
+    Boolean(PACKAGE_TYPE_CONFIG[slide.packageType]) || Boolean(slide.packageId);
+  const hasMeta = Boolean(slide.offerText) || slide.endsAt !== null;
 
-     <Send className="h-4 w-4" />
+  let motion;
+  if (reducedMotion) {
+    motion = isActive
+      ? "visible opacity-100 duration-300"
+      : "pointer-events-none invisible opacity-0 duration-300";
+  } else if (isActive) {
+    motion =
+      "visible translate-y-0 opacity-100 duration-[800ms] delay-[400ms]";
+  } else {
+    motion =
+      "pointer-events-none invisible translate-y-3 opacity-0 duration-[400ms]";
+  }
 
-     Submit Enquiry
-
-                    </>
-
-                )}
-
-               </button>
-
-
-
-               {submitting && (
-
-                <p className="text-center text-[11px] text-navy/45">
-
-                    Please wait while we submit your request.
-
-                </p>
-
-               )}
-
-               </form>
-
-           </>
-
+  return (
+    <div
+      role={count > 1 ? "group" : undefined}
+      aria-roledescription={count > 1 ? "slide" : undefined}
+      aria-label={count > 1 ? `${index + 1} of ${count}` : undefined}
+      aria-hidden={!isActive}
+      className={`col-start-1 row-start-1 flex min-w-0 flex-col transition-[opacity,transform,visibility] ease-out ${layout.wrapper} ${motion}`}
+    >
+      <div className={`flex min-w-0 max-w-3xl flex-col ${layout.text}`}>
+        {/* Eyebrow */}
+        <div
+          className={`mb-5 flex max-w-full items-center gap-3 sm:mb-6 ${layout.actions}`}
+        >
+          {horizontal !== "right" && (
+            <span
+              className="h-px w-8 shrink-0 bg-champagne/70"
+              aria-hidden="true"
+            />
           )}
 
-         </div>
-
-     </div>
-
-    );
-
-}
-
-
-
-// =========================================================
-
-// Main Hero
-
-// =========================================================
-
-
-
-export default function Hero({ onPlanTrip }) {
-
-    const navigate = useNavigate();
-
-
-
-    const searchContainerRef = useRef(null);
-
-
-
-    const [destination, setDestination] = useState("");
-
-    const [searching, setSearching] = useState(false);
-
-const [searchError, setSearchError] = useState("");
-
-
-
-const [settings, setSettings] = useState(null);
-
-const [settingsLoading, setSettingsLoading] =
-
- useState(true);
-
-
-
-const [packages, setPackages] = useState([]);
-
-const [packagesLoading, setPackagesLoading] =
-
- useState(true);
-
-
-
-const [showAllPackages, setShowAllPackages] =
-
- useState(false);
-
-
-
-const [showSuggestions, setShowSuggestions] =
-
- useState(false);
-
-
-
-const [
-
- customPackageModalOpen,
-
- setCustomPackageModalOpen,
-
-] = useState(false);
-
-
-
-// =======================================================
-
-// Load website settings
-
-// =======================================================
-
-
-
-useEffect(() => {
-
- let mounted = true;
-
- api
-
-   .get("/settings")
-
-   .then((res) => {
-
-      if (!mounted) return;
-
-
-
-      setSettings(res?.data || null);
-
-   })
-
-   .catch((error) => {
-
-      console.error(
-
-         "Failed to load website settings:",
-
-         error
-
-      );
-
-
-
-      if (!mounted) return;
-
-
-
-      setSettings(null);
-
-   })
-
-   .finally(() => {
-
-      if (!mounted) return;
-
-
-
-      setSettingsLoading(false);
-
-   });
-
-
-
- return () => {
-
-   mounted = false;
-
- };
-
-}, []);
-
-// =======================================================
-
-// Load packages
-
-// =======================================================
-
-
-
-useEffect(() => {
-
- let mounted = true;
-
-
-
- setPackagesLoading(true);
-
-
-
- getPackages()
-
-  .then((data) => {
-
-   if (!mounted) return;
-
-
-
-   const packageList = Array.isArray(data)
-
-       ? data
-
-       : Array.isArray(data?.items)
-
-       ? data.items
-
-       : [];
-
-
-
-   setPackages(packageList);
-
-  })
-
-  .catch((error) => {
-
-   console.error(
-
-       "Failed to load packages:",
-
-       error
-
-   );
-
-
-
-   if (!mounted) return;
-
-       setPackages([]);
-
-   })
-
-   .finally(() => {
-
-       if (!mounted) return;
-
-
-
-       setPackagesLoading(false);
-
-   });
-
-
-
- return () => {
-
-   mounted = false;
-
- };
-
-}, []);
-
-
-
-// =======================================================
-
-// Close suggestions outside
-
-// =======================================================
-
-
-
-useEffect(() => {
-
- const handleOutsideClick = (event) => {
-
-   if (
-
-       searchContainerRef.current &&
-
-       !searchContainerRef.current.contains(
-
-           event.target
-
-       )
-
-   ){
-
-       setShowSuggestions(false);
-
-   }
-
- };
-
-
-
- document.addEventListener(
-
-     "mousedown",
-
-     handleOutsideClick
-
- );
-
-
-
- return () => {
-
-     document.removeEventListener(
-
-      "mousedown",
-
-      handleOutsideClick
-
-     );
-
- };
-
-}, []);
-
-
-
-// =======================================================
-
-// Published packages
-
-// =======================================================
-
-
-
-const publishedPackages = useMemo(() => {
-
- if (!Array.isArray(packages)) {
-
-     return [];
-
- }
-
-
-
- return packages.filter(isPublishedPackage);
-
-}, [packages]);
-
-
-
-// =======================================================
-
-// Destination list + package count
-
-// =======================================================
-
-
-
-const destinationOptions = useMemo(() => {
-
- const destinationMap = new Map();
-
-
-
- publishedPackages.forEach((pkg) => {
-
-  const rawDestination = String(
-
-      pkg?.destination || ""
-
-  ).trim();
-
-
-
-  if (!rawDestination) {
-
-      return;
-
-  }
-
-
-
-  const normalized =
-
-      normalizeDestination(rawDestination);
-
-
-
-  if (!normalized) {
-
-      return;
-
-  }
-
-
-
-  if (!destinationMap.has(normalized)) {
-
-      destinationMap.set(normalized, {
-
-       name: rawDestination,
-
-       count: 0,
-
-      });
-
-  }
-
-     const item =
-
-       destinationMap.get(normalized);
-
-
-
-     item.count += 1;
-
- });
-
-
-
- return Array.from(
-
-     destinationMap.values()
-
- ).sort((a, b) =>
-
-     a.name.localeCompare(b.name)
-
- );
-
-}, [publishedPackages]);
-
-
-
-// =======================================================
-
-// Destination suggestions
-
-// =======================================================
-
-
-
-const filteredDestinationOptions = useMemo(() => {
-
- const searchTerm =
-
-     normalizeDestination(destination);
-
-
-
- if (!searchTerm) {
-
-     return destinationOptions.slice(0, 8);
-
- }
-
-
-
- return destinationOptions
-
-     .filter((item) =>
-
-          normalizeDestination(
-
-           item.name
-
-          ).includes(searchTerm)
-
-      )
-
-      .slice(0, 8);
-
-}, [
-
- destination,
-
- destinationOptions,
-
-]);
-
-
-
-// =======================================================
-
-// Exact destination
-
-// =======================================================
-
-
-
-const exactDestination = useMemo(() => {
-
- const normalized =
-
-      normalizeDestination(destination);
-
-
-
- if (!normalized) {
-
-      return null;
-
- }
-
-
-
- return (
-
-      destinationOptions.find(
-
-          (item) =>
-
-           normalizeDestination(
-
-            item.name
-
-           ) === normalized
-
-      ) || null
-
- );
-
-}, [
-
- destination,
-
- destinationOptions,
-
-]);
-
-
-
-// =======================================================
-
-// BUILD TRAVEL STYLE CARDS
-
-// =======================================================
-
-
-
-const travelStyles = useMemo(() => {
-
- if (
-
-      !Array.isArray(publishedPackages) ||
-
-      publishedPackages.length === 0
-
- ){
-
-      return [];
-
- }
-
-
-
- const grouped = new Map();
-
-
-
- publishedPackages.forEach((pkg) => {
-
-      const type = getPackageType(pkg);
-
-
-
-      if (!type) {
-
-          return;
-
-      }
-
- if (!PACKAGE_TYPE_CONFIG[type]) {
-
-      return;
-
- }
-
-
-
- if (!grouped.has(type)) {
-
-      grouped.set(type, {
-
-       type,
-
-       count: 0,
-
-       representativePackage: pkg,
-
-      });
-
- }
-
-
-
- const group = grouped.get(type);
-
-
-
- group.count += 1;
-
-
-
- if (
-
-      !getPackageImage(
-
-       group.representativePackage
-
-      ) &&
-
-      getPackageImage(pkg)
-
- ){
-
-      group.representativePackage = pkg;
-
- }
-
-});
-
-
-
-const selected = [];
-
-PRIORITY_PACKAGE_TYPES.forEach((type) => {
-
- const item = grouped.get(type);
-
-
-
- if (item) {
-
-      selected.push({
-
-       type: item.type,
-
-       count: item.count,
-
-       image: getPackageImage(
-
-            item.representativePackage
-
-       ),
-
-      });
-
- }
-
-});
-
-
-
-REMAINING_PACKAGE_TYPES.forEach((type) => {
-
- if (selected.length >= 7) {
-
-      return;
-
- }
-
-
-
- const item = grouped.get(type);
-
-
-
- if (!item) {
-
-      return;
-
- }
-
-
-
- selected.push({
-
-      type: item.type,
-
-      count: item.count,
-
-       image: getPackageImage(
-
-        item.representativePackage
-
-       ),
-
-  });
-
- });
-
-
-
- return selected;
-
-}, [publishedPackages]);
-
-
-
-// =======================================================
-
-// Visible travel styles
-
-// =======================================================
-
-
-
-const visibleTravelStyles = showAllPackages
-
- ? travelStyles
-
- : travelStyles.slice(0, 4);
-
-
-
-// =======================================================
-
-// Dynamic admin settings
-
-// =======================================================
-
-
-
-const headline =
-
- settings?.homepage_headline ||
-
- "Discover holidays worth remembering.";
-
-
-
-const trustLine =
-
- settings?.trust_line ||
-
- "The two Telugu states' trusted travel company";
-
-const internationalDestinations =
-
- Array.isArray(
-
-     settings?.featured_international
-
- )
-
-     ? settings.featured_international
-
-     : [];
-
-
-
-const nationalDestinations =
-
- Array.isArray(
-
-     settings?.featured_national
-
- )
-
-     ? settings.featured_national
-
-     : [];
-
-
-
-const featuredDestinations = [
-
- ...internationalDestinations,
-
- ...nationalDestinations,
-
-].slice(0, 8);
-
-
-
-// =======================================================
-
-// Open custom package request
-
-// =======================================================
-
-
-
-const openCustomPackageRequest = () => {
-
- setShowSuggestions(false);
-
- setSearchError("");
-
- setCustomPackageModalOpen(true);
-
-};
-
-
-
-// =======================================================
-
-// Select destination
-
-//
-
-// IMPORTANT:
-
-//
-
-// Selecting a suggestion DOES NOT navigate.
-
-//
-
-// It only:
-
-// 1. fills the input
-
-// 2. closes suggestions
-
-// 3. waits for Explore Packages
-
-//
-
-// Therefore:
-
-//
-
-// Select Kerala
-
-//      ↓
-
-// input = Kerala
-
-//      ↓
-
-// user clicks Explore Packages
-
-//      ↓
-
-// /packages?destination=Kerala
-
-// =======================================================
-
-
-
-const handleDestinationSelect = (item) => {
-
- if (!item?.name) {
-
-     return;
-
- }
-
-
-
- setDestination(item.name);
-
- setSearchError("");
-
- setShowSuggestions(false);
-
- navigate(
-  `/packages?destination=${encodeURIComponent(item.name)}`
- )
-
-};
-
-
-
-// =======================================================
-
-// Search / Explore Packages
-
-//
-
-// This is the ONLY place where destination search
-
-// navigates to the packages listing.
-
-//
-
-// IMPORTANT:
-
-//
-
-// /packages?destination=Kerala
-
-//
-
-// is a listing route.
-
-//
-
-// It is NOT:
-
-//
-
-// /packages/:slug
-
-// =======================================================
-
-
-
-const handleSearch = async (event) => {
-
- event.preventDefault();
-
-
-
- const search = destination.trim();
-
-if (!search) {
-
-    setSearchError("");
-
-    setShowSuggestions(false);
-
-    navigate("/packages");
-
-    return;
-
-}
-
-
-
-try {
-
-    setSearching(true);
-
-    setSearchError("");
-
-    setShowSuggestions(false);
-
-
-
-    // ---------------------------------------------------
-
-    // Exact destination
-
-    // ---------------------------------------------------
-
-
-
-    const matchedDestination =
-
-     destinationOptions.find(
-
-      (item) =>
-
-          normalizeDestination(
-
-           item.name
-
-          ) ===
-
-          normalizeDestination(search)
-
-     );
-
-
-
-    if (matchedDestination) {
-
-     navigate(
-
-     `/packages?destination=${encodeURIComponent(
-
-         matchedDestination.name
-
-     )}`
-
-    );
-
-
-
-    return;
-
-}
-
-
-
-// ---------------------------------------------------
-
-// Partial destination
-
-// ---------------------------------------------------
-
-
-
-const partialMatch =
-
-    destinationOptions.find(
-
-     (item) =>
-
-         normalizeDestination(
-
-             item.name
-
-         ).includes(
-
-             normalizeDestination(search)
-
-         ) ||
-
-         normalizeDestination(
-
-             search
-
-         ).includes(
-
-             normalizeDestination(item.name)
-
-         )
-
-    );
-
-
-
-if (partialMatch) {
-
-        navigate(
-
-         `/packages?destination=${encodeURIComponent(
-
-             partialMatch.name
-
-         )}`
-
-        );
-
-
-
-        return;
-
-    }
-
-
-
-    // ---------------------------------------------------
-
-    // No destination
-
-    // ---------------------------------------------------
-
-
-
-    setSearchError(
-
-        "The current destination package is not available yet."
-
-    );
-
-} catch (error) {
-
-    console.error(
-
-        "Package search failed:",
-
-        error
-
-    );
-
-
-
-    setSearchError(
-
-        "Unable to search packages right now. Please try again."
-
-    );
-
-} finally {
-
-    setSearching(false);
-
-}
-
-};
-
-
-
-// =======================================================
-
-// Search input
-
-// =======================================================
-
-
-
-const handleInputChange = (event) => {
-
- const value = event.target.value;
-
-
-
- setDestination(value);
-
- setSearchError("");
-
- setShowSuggestions(true);
-
-};
-
-
-
-// =======================================================
-
-// Render
-
-// =======================================================
-
-
-
-return (
-
- <>
-
-     {/* ===================================================
-
-       TOASTIFY
-
-       =================================================== */}
-
-
-
-     <ToastContainer
-
-      position="top-right"
-
-      autoClose={3500}
-
-      hideProgressBar={false}
-
- newestOnTop
-
- closeOnClick
-
- pauseOnFocusLoss
-
- draggable
-
- pauseOnHover
-
- theme="light"
-
-/>
-
-
-
-<section
-
- className="
-
-     relative
-
-     overflow-hidden
-
-     px-4
-
-     py-8
-
-     sm:px-6
-
-     sm:py-10
-
-     lg:px-8
-
-     lg:py-12
-
- "
-
->
-      <img
-    src="/images/view1.webp"
-    alt=""
-    fetchPriority="high"
-    loading="eager"
-    decoding="async"
-    width="1920"
-    height="1080"
-    className="
-      absolute
-      inset-0
-      h-full
-      w-full
-      object-cover
-      object-center
-    "
-  />
-
- {/* Background overlays */}
-
-
-
- <div
-
-     className="
-
-      absolute
-
-     inset-0
-
-     bg-gradient-to-r
-
-     from-navy/95
-
-     via-navy/80
-
-     to-navy/30
-
- "
-
- aria-hidden="true"
-
-/>
-
-
-
-<div
-
- className="
-
-     absolute
-
-     inset-x-0
-
-     bottom-0
-
-     h-2/3
-
-     bg-gradient-to-t
-
-     from-navy/80
-
-     via-navy/20
-
-     to-transparent
-
- "
-
- aria-hidden="true"
-
-/>
-
-
-
-<div
-
- className="
-
-     absolute
-
-     -right-40
-
-     -bottom-40
-
-     w-[500px]
-
-     h-[500px]
-
-     rounded-full
-
-     bg-accent/10
-
-     blur-3xl
-
- "
-
- aria-hidden="true"
-
-/>
-
-
-
-{/* Main content */}
-
-
-
-<div
-
- className="
-
-     relative
-
-     z-10
-
-     w-full
-
-     max-w-7xl
-
-     mx-auto
-
- "
-
->
-
- <div
-
-     className="
-
-      grid
-
-      grid-cols-1
-
-      lg:grid-cols-[minmax(0,1fr)_minmax(440px,0.95fr)]
-
-      xl:grid-cols-[minmax(0,1fr)_560px]
-
-      gap-8
-
-      lg:gap-10
-
-    xl:gap-12
-
-    items-center
-
-"
-
->
-
-{/* =================================================
-
-        LEFT SIDE
-
-        ================================================= */}
-
-
-
-<div
-
-    className="
-
-        min-w-0
-
-        pt-0
-
-        sm:pt-2
-
-        lg:pt-0
-
-    "
-
->
-
-    {/* Eyebrow */}
-
-
-
-    <div
-
-        className="
-
-         inline-flex
-
-         items-center
-
-         gap-2
-
-         mb-5
-
-         rounded-full
-
-         border
-
-         border-ivory/20
-
-         bg-ivory/10
-
-     backdrop-blur-md
-
-     px-4
-
-     py-2
-
- "
-
->
-
- <Sparkles
-
-     className="w-4 h-4 text-accent"
-
-     aria-hidden="true"
-
- />
-
-
-
- <span
-
-     className="
-
-         uppercase
-
-         tracking-[0.18em]
-
-         text-[11px]
-
-         sm:text-xs
-
-         font-semibold
-
-         text-ivory/90
-
-     "
-
- >
-
-     Curated holidays, made simple
-
- </span>
-
-</div>
-
-
-
-{/* Heading */}
-
-
-
-{settingsLoading ? (
-
- <div
-
-     className="space-y-3 max-w-3xl"
-
-     aria-label="Loading hero content"
-
- >
-
-     <Skeleton className="h-12 sm:h-14 md:h-16 w-[85%]" />
-
-
-
-     <Skeleton className="h-12 sm:h-14 md:h-16 w-[60%]" />
-
- </div>
-
-):(
-
- <h1
-
-     className="
-
-         font-display
-
-         text-3xl
-
-         sm:text-4xl
-
-         md:text-5xl
-
-         lg:text-5xl
-
-         xl:text-6xl
-
-         font-semibold
-
-         leading-[1.05]
-
-         tracking-tight
-
-         max-w-3xl
-
-         text-ivory
-
-     "
-
- >
-
-     {headline}
-
- </h1>
-
-)}
-
-
-
-{/* Trust line */}
-
-<div
-
- className="
-
-     mt-5
-
-     inline-flex
-
-     items-center
-
-     gap-2
-
-     text-sm
-
-     sm:text-base
-
-     font-medium
-
-     text-ivory/75
-
- "
-
->
-
- <ShieldCheck
-
-     className="
-
-         w-4
-
-         h-4
-
-         sm:w-5
-
-         sm:h-5
-
-         text-accent
-
-         shrink-0
-
-     "
-
-     aria-hidden="true"
-
- />
-
-
-
- {settingsLoading ? (
-
-     <Skeleton className="h-4 w-64" />
-
- ):(
-
-     <span>{trustLine}</span>
-
- )}
-
-</div>
-
-
-
-{/* Subheading */}
-
-
-
-<p
-
- className="
-
-     mt-5
-
-     sm:mt-6
-
-     text-base
-
-     sm:text-lg
-
-     lg:text-lg
-
-     xl:text-xl
-
-     leading-relaxed
-
-     text-ivory/80
-
-     max-w-2xl
-
- "
-
->
-
- Explore thoughtfully curated holiday
-
- packages, beautiful destinations, and
-
- hassle-free travel experiences — planned
-
- around the way you want to travel.
-
-</p>
-
-
-
-{/* =================================================
-
-     SEARCH
-
-     ================================================= */}
-
-<div
-
- ref={searchContainerRef}
-
- className="max-w-2xl relative"
-
->
-
- <form
-
-    onSubmit={handleSearch}
-
-    className="
-
-        relative
-
-        mt-6
-
-        sm:mt-7
-
-        bg-ivory
-
-        text-navy
-
-        rounded-2xl
-
-        shadow-2xl
-
-        shadow-black/30
-
-        w-full
-
-        flex
-
-        flex-col
-
-        sm:flex-row
-
-        items-stretch
-
-        overflow-visible
-
-        ring-1
-
-        ring-black/5
-
-    "
-
- >
-
-    {/* Input */}
-
-<div
-
- className="
-
-     flex-1
-
-     flex
-
-     items-center
-
-     gap-3
-
-     px-4
-
-     py-3.5
-
-     sm:py-4
-
-     min-w-0
-
- "
-
->
-
- <MapPin
-
-     className="
-
-         w-5
-
-         h-5
-
-         text-secondary
-
-         shrink-0
-
-     "
-
-     aria-hidden="true"
-
- />
-
-
-
- <div className="flex-1 min-w-0">
-
-     <label
-
-         htmlFor="destination-search"
-
-         className="
-
-          block
-
-          text-[11px]
-
-     font-semibold
-
-     uppercase
-
-     tracking-wider
-
-     text-navy/50
-
-     mb-0.5
-
- "
-
->
-
- Explore destinations
-
-</label>
-
-
-
-<input
-
- id="destination-search"
-
- type="text"
-
- value={destination}
-
- onChange={handleInputChange}
-
- onFocus={() =>
-
-     setShowSuggestions(true)
-
- }
-
- placeholder="Where do you want to go?"
-
- aria-label="Search destination"
-
- autoComplete="off"
-
- className="
-
-     w-full
-
-     min-w-0
-
-     bg-transparent
-
-     outline-none
-
-     placeholder:text-navy/35
-
-     font-medium
-
-       text-sm
-
-       sm:text-base
-
-   "
-
-  />
-
- </div>
-
-</div>
-
-
-
-{/* Search button */}
-
-
-
-<button
-
- type="submit"
-
- disabled={searching}
-
- className="
-
-  flex
-
-  items-center
-
-  justify-center
-
-  gap-2
-
-  bg-accent
-
-  hover:bg-accent-hover
-
-  disabled:opacity-70
-
-  disabled:cursor-not-allowed
-
-  transition-all
-
-  duration-200
-
-  text-ivory
-
-  font-semibold
-
-  px-6
-
-  sm:px-7
-
-  py-3.5
-
-    sm:py-4
-
-    whitespace-nowrap
-
-    hover:shadow-lg
-
-    rounded-b-2xl
-
-    sm:rounded-bl-none
-
-    sm:rounded-r-2xl
-
-"
-
->
-
-{searching ? (
-
-    <Loader2
-
-     className="
-
-         w-4
-
-         h-4
-
-         animate-spin
-
-     "
-
-    />
-
-):(
-
-    <Search
-
-     className="w-4 h-4"
-
-     aria-hidden="true"
-
-    />
-
-)}
-
-
-
-{searching
-
-    ? "Searching..."
-
-    : "Explore Packages"}
-
-</button>
-
-{/* =================================================
-
- DESTINATION SUGGESTIONS
-
- ================================================= */}
-
-
-
-{showSuggestions &&
-
-!packagesLoading &&
-
-filteredDestinationOptions.length >
-
- 0 && (
-
- <div
-
-  className="
-
-      absolute
-
-      left-0
-
-      right-0
-
-      top-full
-
-      mt-2
-
-      z-50
-
-      overflow-hidden
-
-      rounded-2xl
-
-      border
-
-      border-navy/10
-
-      bg-white
-
-      shadow-2xl
-
-  "
-
- >
-
-  <div
-
-      className="
-
-       px-4
-
-       py-3
-
-     border-b
-
-     border-navy/10
-
- "
-
->
-
- <p
-
-     className="
-
-         text-[11px]
-
-         font-semibold
-
-         uppercase
-
-         tracking-wider
-
-         text-navy/45
-
-     "
-
- >
-
-     Available destinations
-
- </p>
-
-</div>
-
-
-
-<div
-
- className="
-
-     max-h-80
-
-     overflow-y-auto
-
-     p-2
-
- "
-
->
-
- {filteredDestinationOptions.map(
-
-     (item) => (
-
-         <button
-
-          key={item.name}
-
-type="button"
-
-onClick={() =>
-
-    handleDestinationSelect(
-
-        item
-
-    )
-
-}
-
-className="
-
-    group
-
-    flex
-
-    w-full
-
-    items-center
-
-    gap-3
-
-    rounded-xl
-
-    px-3
-
-    py-3
-
-    text-left
-
-    transition
-
-    hover:bg-navy/5
-
-"
-
->
-
-<span
-
-    className="
-
-        flex
-
-        h-9
-
-        w-9
-
-        shrink-0
-
-        items-center
-
-        justify-center
-
-     rounded-full
-
-     bg-accent/10
-
-     text-accent
-
- "
-
->
-
- <MapPin className="h-4 w-4" />
-
-</span>
-
-
-
-<span className="min-w-0 flex-1">
-
- <span
-
-     className="
-
-         block
-
-         truncate
-
-         text-sm
-
-         font-semibold
-
-         text-navy
-
-         group-hover:text-accent
-
-     "
-
- >
-
-     {item.name}
-
- </span>
-
-
-
- <span
-
-     className="
-
-         mt-0.5
-
-         block
-
-         text-xs
-
-         text-navy/50
-
-                "
-
-            >
-
-                {item.count}{" "}
-
-                {item.count === 1
-
-                    ? "package"
-
-                    : "packages"}{" "}
-
-                available
-
-            </span>
-
-           </span>
-
-
-
-           <ChevronRight
-
-            className="
-
-                h-4
-
-                w-4
-
-                shrink-0
-
-                text-navy/30
-
-                transition
-
-                group-hover:translate-x-1
-
-                group-hover:text-accent
-
-            "
-
-           />
-
-           </button>
-
-       )
-
-      )}
-
-     </div>
-
- </div>
-
-)}
-
-{/* No destination */}
-
-
-
-{showSuggestions &&
-
- !packagesLoading &&
-
- destination.trim() &&
-
- filteredDestinationOptions.length ===
-
-  0 && (
-
-  <div
-
-   className="
-
-       absolute
-
-       left-0
-
-       right-0
-
-       top-full
-
-       mt-2
-
-       z-50
-
-       rounded-2xl
-
-       border
-
-       border-navy/10
-
-       bg-white
-
-       p-4
-
-       shadow-2xl
-
-   "
-
-  >
-
-   <div className="flex gap-3">
-
-       <span
-
-        className="
-
-         flex
-
-         h-9
-
-     w-9
-
-     shrink-0
-
-     items-center
-
-     justify-center
-
-     rounded-full
-
-     bg-accent/10
-
-     text-accent
-
- "
-
->
-
- <MapPin className="h-4 w-4" />
-
-</span>
-
-
-
-<div>
-
- <p
-
-     className="
-
-         text-sm
-
-         font-semibold
-
-         text-navy
-
-     "
-
- >
-
-     No package found for "
-
-     {destination}"
-
- </p>
-
-
-
- <p
-
-     className="
-
-         mt-1
-
-         text-xs
-
-    leading-relaxed
-
-    text-navy/55
-
-"
-
->
-
-You can still request a
-
-customized package for this
-
-destination.
-
-</p>
-
-
-
-<button
-
-type="button"
-
-onClick={
-
-    openCustomPackageRequest
-
-}
-
-className="
-
-    mt-3
-
-    inline-flex
-
-    items-center
-
-    gap-2
-
-    rounded-lg
-
-    bg-accent
-
-    px-3
-
-    py-2
-
-    text-xs
-
-    font-semibold
-
-    text-white
-
-    transition
-
-    hover:bg-accent-hover
-
-          "
-
-         >
-
-          <MessageCircle className="h-3.5 w-3.5" />
-
-          Request custom package
-
-         </button>
-
+          <span className="truncate text-[11px] font-medium uppercase tracking-[0.28em] text-champagne sm:text-xs">
+            {slide.badge || DEFAULT_BADGE}
+          </span>
+
+          {horizontal !== "left" && (
+            <span
+              className="h-px w-8 shrink-0 bg-champagne/70"
+              aria-hidden="true"
+            />
+          )}
         </div>
 
-       </div>
+        <Heading className="line-clamp-3 max-w-3xl font-display text-[2.5rem] font-medium leading-[1.05] tracking-[-0.01em] text-white [text-wrap:balance] sm:text-6xl lg:text-[4.25rem]">
+          {renderHeadline(slide.headline)}
+        </Heading>
 
-   </div>
+        {/* Subtext: max 2 lines on phones, 3 from sm */}
+        {slide.subtext && (
+          <p className="mt-4 line-clamp-2 max-w-xl text-[15px] leading-relaxed text-white/85 [text-wrap:pretty] sm:mt-5 sm:line-clamp-3 sm:max-w-2xl sm:text-lg sm:leading-8">
+            {slide.subtext}
+          </p>
+        )}
 
-  )}
+        {/* Offer chip + validity */}
+        {hasMeta && (
+          <div
+            className={`mt-4 flex flex-wrap items-center gap-x-4 gap-y-2 ${layout.actions}`}
+          >
+            {slide.offerText && (
+              <span className="inline-flex h-8 items-center gap-1.5 rounded-full bg-white px-3.5 text-xs font-semibold text-primary-dark shadow-travel-card">
+                <Sparkles
+                  className="h-3.5 w-3.5 text-accent"
+                  aria-hidden="true"
+                />
+                {slide.offerText}
+              </span>
+            )}
 
-</form>
+            {slide.endsAt !== null && (
+              <span className="inline-flex items-center gap-1.5 text-xs text-white/85 sm:text-[13px]">
+                <CalendarClock className="h-4 w-4" aria-hidden="true" />
+                Offer valid till {formatShortDate(slide.endsAt)}
+              </span>
+            )}
+          </div>
+        )}
 
-
-
-{/* =================================================
-
-  UNAVAILABLE DESTINATION
-
-  ================================================= */}
-
-
-
-{searchError && (
-
- <div
-
-  className="
-
-   mt-3
-
-   rounded-2xl
-
-   border
-
-   border-white/15
-
-   bg-navy/55
-
-   backdrop-blur-md
-
-   px-4
-
-   py-3
-
-   text-sm
-
-   text-ivory
-
-"
-
-role="alert"
-
->
-
-<div className="flex items-start gap-3">
-
-    <div
-
-     className="
-
-         mt-0.5
-
-         flex
-
-         h-8
-
-         w-8
-
-         shrink-0
-
-         items-center
-
-         justify-center
-
-         rounded-full
-
-         bg-accent/15
-
-         text-accent
-
-     "
-
-    >
-
-     <MapPin className="h-4 w-4" />
-
+        {/* Actions: stacked full-width on mobile, side by side from sm */}
+        {hasActions && (
+          <div className={`mt-6 flex w-full ${layout.actions}`}>
+            <SlideActions
+              slide={slide}
+              packageById={packageById}
+              packagesLoading={packagesLoading}
+              align={layout.actions}
+            />
+          </div>
+        )}
+      </div>
     </div>
-
-
-
-    <div className="min-w-0 flex-1">
-
-     <p
-
-         className="
-
-             font-semibold
-
-             text-ivory
-
-         "
-
-     >
-
-Current destination package is
-
-not available
-
-</p>
-
-
-
-<p
-
-className="
-
-    mt-1
-
-    text-xs
-
-    leading-relaxed
-
-    text-ivory/70
-
-"
-
->
-
-We don't currently have a
-
-package for{" "}
-
-<span className="font-semibold text-ivory">
-
-    "{destination.trim()}"
-
-</span>
-
-. If you want, we can create a
-
-customized package for you.
-
-</p>
-
-
-
-<button
-
-type="button"
-
-onClick={
-
-    openCustomPackageRequest
-
+  );
 }
 
-className="
+/*
+ * Backgrounds: each slide has its image and its own readability overlay.
+ * Both fade together, so the shade always sits behind the slide's text.
+ */
+function SlideBackgrounds({ slides, currentId, leavingId, reducedMotion }) {
+  return (
+    <div className="absolute inset-0 -z-20 bg-ink" aria-hidden="true">
+      {slides.map((slide, index) => {
+        const isActive = slide.id === currentId;
+        const isLeaving = slide.id === leavingId;
 
-    mt-3
+        let layer = "z-0 opacity-0";
+        let overlayLayer = "z-0 opacity-0";
+        let transition = "none";
+        let overlayTransition = "none";
 
-             inline-flex
+        if (isActive) {
+          layer = "z-20 opacity-100";
+          overlayLayer = "z-[25] opacity-100";
+          transition = reducedMotion
+            ? "opacity 300ms linear"
+            : `opacity ${FADE_MS}ms ease-in-out, transform ${ZOOM_MS}ms linear`;
+          overlayTransition = reducedMotion
+            ? "opacity 300ms linear"
+            : `opacity ${FADE_MS}ms ease-in-out`;
+        } else if (isLeaving) {
+          layer = "z-10 opacity-100";
+          overlayLayer = "z-[15] opacity-100";
+          transition = reducedMotion ? "none" : `transform ${ZOOM_MS}ms linear`;
+        }
 
-             items-center
+        const zoomed = !reducedMotion && (isActive || isLeaving);
 
-             gap-2
+        const overlayClass = getHeroLayout(
+          slide.contentPosition,
+          slide.overlayStrength,
+        ).overlay;
 
-             rounded-xl
-
-             bg-accent
-
-             px-3.5
-
-             py-2
-
-             text-xs
-
-             font-semibold
-
-             text-white
-
-             transition
-
-             hover:bg-accent-hover
-
-         "
-
-        >
-
-         <MessageCircle className="h-3.5 w-3.5" />
-
-         Request a custom package
-
-        </button>
-
-       </div>
-
-      </div>
-
-  </div>
-
- )}
-
-</div>
-
-
-
-{/* =================================================
-
-  POPULAR DESTINATIONS
-
-  ================================================= */}
-
-
-
-{settingsLoading ? (
-
- <div className="mt-6 sm:mt-7 max-w-3xl">
-
-  <Skeleton className="mb-3 h-3 w-36" />
-
-
-
-  <div className="flex flex-wrap gap-2">
-
-      {[1, 2, 3, 4, 5].map(
-
-          (item) => (
-
-              <Skeleton
-
-               key={item}
-
-               className="h-8 w-20 rounded-full"
-
+        return (
+          <Fragment key={slide.id}>
+            <picture>
+              {slide.imageMobile && (
+                <source media="(max-width: 767px)" srcSet={slide.imageMobile} />
+              )}
+              <img
+                src={slide.image}
+                alt=""
+                loading={index === 0 ? "eager" : "lazy"}
+                fetchPriority={index === 0 ? "high" : "auto"}
+                decoding="async"
+                draggable={false}
+                style={{ objectPosition: slide.position, transition }}
+                className={`absolute inset-0 h-full w-full object-cover will-change-[opacity,transform] ${layer} ${
+                  zoomed ? "scale-[1.08]" : "scale-100"
+                }`}
               />
-
-          )
-
-      )}
-
-  </div>
-
- </div>
-
-):(
-
- featuredDestinations.length > 0 && (
-
-  <div
-
-      className="
-
-          mt-5
-
-          sm:mt-6
-
-          max-w-3xl
-
-      "
-
-  >
-
-      <p
-
-          className="
-
-              text-xs
-
-              sm:text-sm
-
-              text-ivory/60
-
-     mb-2
-
- "
-
->
-
- Popular destinations
-
-</p>
-
-
-
-<div
-
- className="
-
-     flex
-
-     flex-wrap
-
-     gap-2
-
- "
-
->
-
- {featuredDestinations.map(
-
-     (place) => (
-
-      <button
-
-       key={place}
-
-       type="button"
-
-       onClick={() => {
-
-        setDestination(place);
-
-        setSearchError("");
-
-        setShowSuggestions(true);
-
-       }}
-
-       className="
-
-        rounded-full
-
-        border
-
-        border-ivory/20
-
-        bg-ivory/10
-
-                backdrop-blur-sm
-
-                px-3
-
-                py-1.5
-
-                text-xs
-
-                sm:text-sm
-
-                text-ivory/85
-
-                hover:bg-ivory/20
-
-                hover:border-ivory/30
-
-                transition-all
-
-            "
-
-            >
-
-            {place}
-
-            </button>
-
-        )
-
-       )}
-
-      </div>
-
-     </div>
-
- )
-
-)}
-
-
-
-{/* =================================================
-
-     TRUST INDICATORS
-
-     ================================================= */}
-
-
-
-<div
-
- className="
-
-     mt-7
-
-     sm:mt-8
-
-    flex
-
-    flex-wrap
-
-    items-center
-
-    gap-x-6
-
-    gap-y-3
-
-    text-sm
-
-    text-ivory/75
-
-"
-
->
-
-<div className="flex items-center gap-2">
-
-    <ShieldCheck
-
-     className="
-
-         w-4
-
-         h-4
-
-         text-accent
-
-     "
-
-     aria-hidden="true"
-
-    />
-
-
-
-    <span>Curated packages</span>
-
-</div>
-
-
-
-<div
-
-    className="
-
-     hidden
-
-     sm:block
-
-     h-4
-
-     w-px
-
-     bg-ivory/20
-
- "
-
-/>
-
-
-
-<div className="flex items-center gap-2">
-
- <Headphones
-
-     className="
-
-         w-4
-
-         h-4
-
-         text-accent
-
-     "
-
-     aria-hidden="true"
-
- />
-
-
-
- <span>Travel support</span>
-
-</div>
-
-
-
-<div
-
- className="
-
-     hidden
-
-     sm:block
-
-     h-4
-
-     w-px
-
-     bg-ivory/20
-
- "
-
-/>
-
-
-
-<div className="flex items-center gap-2">
-
-      <Plane
-
-       className="
-
-           w-4
-
-           h-4
-
-           text-accent
-
-       "
-
-       aria-hidden="true"
-
-      />
-
-
-
-      <span>Hassle-free planning</span>
-
-     </div>
-
- </div>
-
-</div>
-
-
-
-{/* =================================================
-
-     RIGHT SIDE
-
-     ================================================= */}
-
-
-
-<div
-
- className="
-
-     w-full
-
-     lg:self-center
-
- "
-
->
-
- <div
-
-     className="
-
-      rounded-[28px]
-
-      bg-ivory
-
-    text-navy
-
-    p-4
-
-    sm:p-5
-
-    lg:p-6
-
-    shadow-2xl
-
-    shadow-black/25
-
-    ring-1
-
-    ring-white/40
-
-"
-
->
-
-{/* Card heading */}
-
-
-
-<div className="mb-4 sm:mb-5">
-
-    <p
-
-     className="
-
-         text-xs
-
-         sm:text-sm
-
-         uppercase
-
-         tracking-[0.18em]
-
-         font-semibold
-
-         text-accent
-
-     "
-
-    >
-
-     Start here
-
-    </p>
-
-
-
-    <h2
-
-     className="
-
-    mt-2
-
-    font-display
-
-    text-2xl
-
-    sm:text-3xl
-
-    lg:text-4xl
-
-    font-semibold
-
-    leading-tight
-
-    text-navy
-
-"
-
->
-
-Where do you want to{" "}
-
-<span className="text-accent">
-
-    go?
-
-</span>
-
-</h2>
-
-
-
-<p
-
-className="
-
-    mt-2
-
-    text-sm
-
-    sm:text-base
-
-    leading-relaxed
-
-    text-navy/60
-
-"
-
->
-
-Choose a travel style and explore
-
-all the packages available for it.
-
-</p>
-
-</div>
-
-
-
-{/* =================================================
-
-     TRAVEL STYLE CARDS
-
-     ================================================= */}
-
-
-
-<div
-
- className="mt-5 space-y-3"
-
->
-
- {packagesLoading ? (
-
-     [1, 2, 3, 4].map(
-
-         (item) => (
-
-             <PackageCardSkeleton
-
-              key={item}
-
-             />
-
-         )
-
-     )
-
- ):(
-
-     visibleTravelStyles.map(
-
-         (travelStyle) => (
-
-          
-             <TravelStyleCard
-
-              key={travelStyle.type}
-
-              travelStyle={travelStyle}
-
-          />
-
-      )
-
-  )
-
- )}
-
-</div>
-
-
-
-{/* No packages */}
-
-
-
-{!packagesLoading &&
-
- travelStyles.length === 0 && (
-
-  <div
-
-      className="
-
-          rounded-2xl
-
-          border
-
-          border-navy/10
-
-          bg-white
-
-          px-5
-
-          py-8
-
-          text-center
-
-      "
-
-  >
-
-      <p
-
-          className="
-
-              text-sm
-
-              font-semibold
-
-              text-navy
-
-          "
-
-     >
-
-      Holiday packages are coming
-
-      soon.
-
-     </p>
-
-
-
-     <p
-
-      className="
-
-          mt-1
-
-          text-xs
-
-          text-navy/55
-
-      "
-
-     >
-
-      Our team is preparing new
-
-      destinations for you.
-
-     </p>
-
- </div>
-
-)}
-
-
-
-{/* =================================================
-
- LOAD MORE
-
- ================================================= */}
-
-
-
-{!packagesLoading &&
-
-travelStyles.length > 4 && (
-
- <button
-
-     type="button"
-
-     onClick={() =>
-
-      setShowAllPackages(
-
-        (previous) =>
-
-         !previous
-
-    )
-
+            </picture>
+
+            {overlayClass && (
+              <div
+                className={`absolute inset-0 ${overlayLayer} ${overlayClass}`}
+                style={{ transition: overlayTransition }}
+              />
+            )}
+          </Fragment>
+        );
+      })}
+    </div>
+  );
 }
 
-className="
+/*
+ * Pager: counter, progress segments and a quiet pause button.
+ * Phones change slides by swiping or tapping a segment (no arrow buttons,
+ * so the segments get the room); the side arrows (>= sm) live in the hero.
+ */
+function SlidePager({
+  slides,
+  current,
+  barRefs,
+  onSelect,
+  onKeyDown,
+  canAutoplay,
+  userPaused,
+  onTogglePause,
+}) {
+  const count = slides.length;
 
-    mt-5
-
-    mx-auto
-
-    flex
-
-    items-center
-
-    justify-center
-
-    gap-2
-
-    rounded-full
-
-    border
-
-    border-navy/15
-
-    bg-white
-
-    px-5
-
-    py-2.5
-
-    text-sm
-
-    font-semibold
-
-    text-navy
-
-    shadow-sm
-
-    transition-all
-
-    duration-200
-
-    hover:border-accent/40
-
-    hover:text-accent
-
-    hover:shadow-md
-
-    focus:outline-none
-
-    focus:ring-2
-
-          focus:ring-accent/40
-
-      "
-
-  >
-
-      <span>
-
-          {showAllPackages
-
-           ? "Show Less"
-
-           : "Load More"}
-
+  return (
+    <div className="flex items-center gap-3 sm:justify-center sm:gap-5">
+      <span
+        className="shrink-0 font-display text-base font-semibold tabular-nums text-white/90 sm:text-xl"
+        aria-hidden="true"
+      >
+        {padNumber(current + 1)}
+        <span className="text-white/50"> / {padNumber(count)}</span>
       </span>
 
-
-
-      <ChevronRight
-
-          className={`
-
-           h-4
-
-           w-4
-
-           transition-transform
-
-           duration-200
-
-           ${
-
-               showAllPackages
-
-                ? "-rotate-90"
-
-                : "rotate-90"
-
-           }
-
-          `}
-
-          aria-hidden="true"
-
-      />
-
-  </button>
-
- )}
-
-
-
-{/* Travel style count */}
-
-{!packagesLoading &&
-
- travelStyles.length > 4 && (
-
-  <p
-
-      className="
-
-          mt-2
-
-          text-center
-
-          text-[11px]
-
-          text-navy/45
-
-      "
-
-  >
-
-      {showAllPackages
-
-          ? `Showing all ${travelStyles.length} travel styles`
-
-          : `Showing 4 of ${travelStyles.length} travel styles`}
-
-  </p>
-
- )}
-
-
-
-{/* Plan a trip */}
-
-
-
-<button
-
- type="button"
-
- onClick={onPlanTrip}
-
- className="
-
-  mt-4
-
-  w-full
-
-  inline-flex
-
-  items-center
-
-  justify-center
-
-  gap-2
-
-    rounded-2xl
-
-    bg-gradient-to-r
-
-    from-navy
-
-    to-accent
-
-    px-6
-
-    py-4
-
-    text-sm
-
-    sm:text-base
-
-    font-semibold
-
-    text-ivory
-
-    shadow-lg
-
-    shadow-navy/15
-
-    transition-all
-
-    duration-200
-
-    hover:-translate-y-0.5
-
-    hover:shadow-xl
-
-    focus:outline-none
-
-    focus:ring-2
-
-    focus:ring-accent/50
-
-    focus:ring-offset-2
-
-"
-
->
-
-<Plane
-
-    className="w-4 h-4"
-
-    aria-hidden="true"
-
-/>
-
-
-
-<span>
-
-         Tell us your plan
-
-       </span>
-
-
-
-       <span
-
-         className="
-
-             text-lg
-
-             leading-none
-
-         "
-
-         aria-hidden="true"
-
-       >
-
-         →
-
-       </span>
-
-       </button>
-
-   </div>
-
-  </div>
-
- </div>
-
-</div>
-
-
-
-{/* Bottom fade */}
-
-
-
-<div
-
- className="
-
-  absolute
-
-  bottom-0
-
-  left-0
-
-  right-0
-
-  h-20
-
-  bg-gradient-to-t
-
-                  from-white
-
-                  to-transparent
-
-                  opacity-10
-
-                  pointer-events-none
-
-              "
-
-              aria-hidden="true"
-
-          />
-
-         </section>
-
-
-
-         {/* =====================================================
-
-              CUSTOM PACKAGE MODAL
-
-              ===================================================== */}
-
-
-
-         <CustomPackageModal
-
-          open={customPackageModalOpen}
-
-          destination={destination}
-
-          onClose={() =>
-
-              setCustomPackageModalOpen(false)
-
-          }
-
-         />
-
-     </>
-
-    );
-
+      <div
+        role="group"
+        aria-label="Choose a slide"
+        onKeyDown={onKeyDown}
+        className="flex min-w-0 flex-1 gap-1.5 sm:max-w-md sm:gap-2"
+      >
+        {slides.map((slide, index) => {
+          const isActive = index === current;
+          return (
+            <button
+              key={slide.id}
+              type="button"
+              onClick={() => onSelect(index)}
+              aria-label={`Show slide ${index + 1} of ${count}: ${slide.headline}`}
+              aria-current={isActive ? "true" : undefined}
+              className="group flex-1 rounded-md py-5 focus:outline-none focus-visible:ring-2 focus-visible:ring-white"
+            >
+              <span className="block h-1 overflow-hidden rounded-full bg-white/30 transition-colors group-hover:bg-white/45">
+                <span
+                  ref={(element) => {
+                    barRefs.current[index] = element;
+                  }}
+                  className="block h-full origin-left rounded-full bg-champagne"
+                  style={{ transform: "scaleX(0)" }}
+                />
+              </span>
+            </button>
+          );
+        })}
+      </div>
+
+      {canAutoplay && (
+        <button
+          type="button"
+          onClick={onTogglePause}
+          className={PAUSE_BUTTON}
+          aria-label="Pause slideshow"
+          aria-pressed={userPaused}
+        >
+          {userPaused ? (
+            <Play className="h-4 w-4" aria-hidden="true" />
+          ) : (
+            <Pause className="h-4 w-4" aria-hidden="true" />
+          )}
+        </button>
+      )}
+    </div>
+  );
 }
 
+/* ============================================================
+   CUSTOM PACKAGE MODAL
+============================================================ */
+function TextField({ id, label, error, ...inputProps }) {
+  return (
+    <div>
+      <label htmlFor={id} className={LABEL_CLASS}>
+        {label}
+      </label>
+      <input
+        id={id}
+        className={INPUT_CLASS}
+        aria-invalid={error ? "true" : undefined}
+        aria-describedby={error ? `${id}-error` : undefined}
+        {...inputProps}
+      />
+      {error && (
+        <p
+          id={`${id}-error`}
+          className="mt-1.5 text-xs font-medium text-error-text"
+        >
+          {error}
+        </p>
+      )}
+    </div>
+  );
+}
 
+const MODAL_FIELDS = [
+  "name",
+  "phone",
+  "destination",
+  "package_type",
+  "travellers",
+  "travel_date",
+];
 
+function CustomPackageModal({
+  open,
+  destination,
+  mode = "unavailable",
+  onClose,
+}) {
+  const [form, setForm] = useState({
+    ...EMPTY_CUSTOM_FORM,
+    destination: destination || "",
+  });
+  const [submitting, setSubmitting] = useState(false);
+  const [success, setSuccess] = useState(false);
+  const [errors, setErrors] = useState({});
+  const [touched, setTouched] = useState({});
+  const submitLockRef = useRef(false);
 
+  const today = getTodayForDateInput();
+  const currentYear = new Date().getFullYear();
+  const nextYear = currentYear + 1;
 
+  const validateField = (name, value) => {
+    const trimmed = String(value ?? "").trim();
 
+    switch (name) {
+      case "name":
+        if (!trimmed) return "Please enter your name.";
+        if (!/^[A-Za-z]+(?:[ '-][A-Za-z]+)*$/.test(trimmed)) {
+          return "Name should contain letters only.";
+        }
+        return "";
+      case "phone":
+        if (!trimmed) return "Please enter your phone number.";
+        if (!/^\d+$/.test(trimmed)) {
+          return "Phone number should contain numbers only.";
+        }
+        if (trimmed.length !== 10) {
+          return "Phone number should contain 10 digits.";
+        }
+        if (!/^[6-9]\d{9}$/.test(trimmed)) {
+          return "Please enter a valid phone number.";
+        }
+        return "";
+      case "destination":
+        return trimmed ? "" : "Please enter your destination.";
+      case "package_type":
+        return trimmed ? "" : "Please select a package type.";
+      case "travellers":
+        if (!trimmed) return "Please enter the number of travellers.";
+        if (!/^\d+$/.test(trimmed)) {
+          return "Travellers must be a whole number.";
+        }
+        if (Number(trimmed) < 1) {
+          return "There must be at least 1 traveller.";
+        }
+        return "";
+      case "travel_date": {
+        if (!trimmed) return "Please select your travel date.";
+        if (!/^\d{4}-\d{2}-\d{2}$/.test(trimmed)) {
+          return "Please enter a valid travel date.";
+        }
+        const selected = new Date(`${trimmed}T00:00:00`);
+        if (Number.isNaN(selected.getTime())) {
+          return "Please enter a valid travel date.";
+        }
+        const year = selected.getFullYear();
+        if (year !== currentYear && year !== nextYear) {
+          return `Travel date must be in ${currentYear} or ${nextYear}.`;
+        }
+        const todayDate = new Date();
+        todayDate.setHours(0, 0, 0, 0);
+        if (selected < todayDate) {
+          return "Travel date cannot be in the past.";
+        }
+        return "";
+      }
+      default:
+        return "";
+    }
+  };
+
+  const validateForm = () => {
+    const nextErrors = {};
+    MODAL_FIELDS.forEach((field) => {
+      const error = validateField(field, form[field]);
+      if (error) nextErrors[field] = error;
+    });
+    setErrors(nextErrors);
+    setTouched((previous) => ({
+      ...previous,
+      ...Object.fromEntries(MODAL_FIELDS.map((field) => [field, true])),
+    }));
+    return Object.keys(nextErrors).length === 0;
+  };
+
+  useEffect(() => {
+    if (!open) return;
+    setForm({ ...EMPTY_CUSTOM_FORM, destination: destination || "" });
+    setSubmitting(false);
+    setSuccess(false);
+    setErrors({});
+    setTouched({});
+    submitLockRef.current = false;
+  }, [open, destination]);
+
+  useEffect(() => {
+    if (!open) return undefined;
+
+    const handleEscape = (event) => {
+      if (event.key === "Escape" && !submitting) onClose();
+    };
+
+    document.addEventListener("keydown", handleEscape);
+    const previousOverflow = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
+
+    return () => {
+      document.removeEventListener("keydown", handleEscape);
+      document.body.style.overflow = previousOverflow;
+    };
+  }, [open, onClose, submitting]);
+
+  if (!open) return null;
+
+  const handleChange = (event) => {
+    const { name, value } = event.target;
+    setForm((previous) => ({ ...previous, [name]: value }));
+    setTouched((previous) => ({ ...previous, [name]: true }));
+    setErrors((previous) => ({
+      ...previous,
+      [name]: validateField(name, value),
+    }));
+  };
+
+  const fieldError = (name) => (touched[name] ? errors[name] : "");
+
+  const handleSubmit = async (event) => {
+    event.preventDefault();
+    if (submitLockRef.current || submitting || success) return;
+
+    if (!validateForm()) {
+      toast.error("Please correct the highlighted fields.");
+      return;
+    }
+
+    submitLockRef.current = true;
+    setSubmitting(true);
+
+    try {
+      await api.post("/enquiries", {
+        name: form.name.trim(),
+        phone: form.phone.trim(),
+        destination: form.destination.trim(),
+        package_type: form.package_type.trim(),
+        travellers: Number(form.travellers),
+        travel_date: form.travel_date,
+        message: form.message.trim(),
+      });
+      setSuccess(true);
+      toast.success("Your travel request has been submitted successfully!");
+    } catch (error) {
+      console.error("Custom package enquiry failed:", error);
+      submitLockRef.current = false;
+
+      const detail = error?.response?.data?.detail;
+      let message = "Unable to submit your request right now. Please try again.";
+
+      if (Array.isArray(detail)) {
+        message = detail
+          .map((item) => item?.msg || item?.message || "Invalid enquiry details.")
+          .join(", ");
+      } else if (typeof detail === "string") {
+        message = detail;
+      }
+
+      toast.error(message);
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
+  return (
+    <div
+      className="fixed inset-0 z-[100] flex items-end justify-center bg-ink/55 p-0 backdrop-blur-sm sm:items-center sm:p-4"
+      role="dialog"
+      aria-modal="true"
+      aria-labelledby="custom-package-title"
+      onMouseDown={(event) => {
+        if (event.target === event.currentTarget && !submitting) onClose();
+      }}
+    >
+      {/* Bottom sheet on phones, centred card from sm */}
+      <div className="relative max-h-[92vh] w-full max-w-lg overflow-y-auto rounded-t-3xl border border-border bg-card p-5 shadow-brand sm:max-h-[90vh] sm:rounded-3xl sm:p-7">
+        <button
+          type="button"
+          onClick={onClose}
+          disabled={submitting}
+          className="absolute right-4 top-4 flex h-9 w-9 items-center justify-center rounded-full bg-surface text-text-secondary transition hover:bg-surface-soft hover:text-text-dark focus:outline-none focus-visible:ring-2 focus-visible:ring-primary/40 disabled:opacity-50"
+          aria-label="Close custom package form"
+        >
+          <X className="h-5 w-5" aria-hidden="true" />
+        </button>
+
+        {success ? (
+          <div className="py-8 text-center">
+            <div className="mx-auto flex h-16 w-16 items-center justify-center rounded-full bg-success-bg text-success">
+              <CheckCircle2 className="h-8 w-8" aria-hidden="true" />
+            </div>
+            <h2
+              id="custom-package-title"
+              className="mt-5 font-display text-3xl font-semibold text-text-dark"
+            >
+              Request received
+            </h2>
+            <p className="mx-auto mt-3 max-w-sm text-sm leading-relaxed text-text-secondary">
+              Thank you. Our travel team will review your request and contact
+              you soon.
+            </p>
+            <button
+              type="button"
+              onClick={onClose}
+              className="mt-6 rounded-xl bg-accent px-6 py-3 text-sm font-semibold text-white transition hover:bg-accent-hover focus:outline-none focus-visible:ring-2 focus-visible:ring-primary/40"
+            >
+              Done
+            </button>
+          </div>
+        ) : (
+          <>
+            <div className="pr-10">
+              <div className="flex items-center gap-3">
+                <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl bg-primary-lighter text-primary">
+                  <PlaneTakeoff className="h-5 w-5" aria-hidden="true" />
+                </div>
+                <h2
+                  id="custom-package-title"
+                  className="font-display text-2xl font-semibold text-text-dark sm:text-3xl"
+                >
+                  Plan a custom trip
+                </h2>
+              </div>
+              <p className="mt-3 text-sm leading-relaxed text-text-secondary">
+                {mode === "plan"
+                  ? "Tell us where you want to go and when. Our team will plan a trip around you and get in touch."
+                  : "This destination is not currently available as a package. Tell us what you are looking for and our team can help create a customized trip."}
+              </p>
+            </div>
+
+            <form onSubmit={handleSubmit} className="mt-6 space-y-4" noValidate>
+              <TextField
+                id="custom-name"
+                label="Name"
+                name="name"
+                type="text"
+                value={form.name}
+                onChange={handleChange}
+                placeholder="Enter your name"
+                autoComplete="name"
+                disabled={submitting}
+                required
+                error={fieldError("name")}
+              />
+
+              <TextField
+                id="custom-phone"
+                label="Phone number"
+                name="phone"
+                type="tel"
+                value={form.phone}
+                onChange={handleChange}
+                placeholder="10-digit mobile number"
+                autoComplete="tel"
+                inputMode="numeric"
+                maxLength={10}
+                disabled={submitting}
+                required
+                error={fieldError("phone")}
+              />
+
+              <TextField
+                id="custom-destination"
+                label="Destination"
+                name="destination"
+                type="text"
+                value={form.destination}
+                onChange={handleChange}
+                placeholder="Enter your destination"
+                disabled={submitting}
+                required
+                error={fieldError("destination")}
+              />
+
+              <div>
+                <label htmlFor="custom-package-type" className={LABEL_CLASS}>
+                  Package type
+                </label>
+                <select
+                  id="custom-package-type"
+                  name="package_type"
+                  value={form.package_type}
+                  onChange={handleChange}
+                  disabled={submitting}
+                  required
+                  className={INPUT_CLASS}
+                >
+                  <option value="">Select package type</option>
+                  {Object.entries(PACKAGE_TYPE_CONFIG).map(([value, config]) => (
+                    <option key={value} value={value}>
+                      {config.label}
+                    </option>
+                  ))}
+                </select>
+                {fieldError("package_type") && (
+                  <p className="mt-1.5 text-xs font-medium text-error-text">
+                    {fieldError("package_type")}
+                  </p>
+                )}
+              </div>
+
+              <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+                <TextField
+                  id="custom-travellers"
+                  label="Travellers"
+                  name="travellers"
+                  type="text"
+                  value={form.travellers}
+                  onChange={handleChange}
+                  placeholder="Number"
+                  inputMode="numeric"
+                  pattern="[0-9]*"
+                  disabled={submitting}
+                  required
+                  error={fieldError("travellers")}
+                />
+
+                <TextField
+                  id="custom-travel-date"
+                  label="Travel date"
+                  name="travel_date"
+                  type="date"
+                  min={today}
+                  value={form.travel_date}
+                  onChange={handleChange}
+                  disabled={submitting}
+                  required
+                  error={fieldError("travel_date")}
+                />
+              </div>
+
+              <div>
+                <label htmlFor="custom-message" className={LABEL_CLASS}>
+                  Message (optional)
+                </label>
+                <textarea
+                  id="custom-message"
+                  name="message"
+                  value={form.message}
+                  onChange={handleChange}
+                  rows={4}
+                  disabled={submitting}
+                  placeholder="Tell us about your trip requirements..."
+                  className={`${INPUT_CLASS} resize-none`}
+                />
+              </div>
+
+              <button
+                type="submit"
+                disabled={submitting}
+                className="flex w-full items-center justify-center gap-2 rounded-xl bg-accent px-5 py-3.5 text-sm font-semibold text-white transition-all hover:bg-accent-hover focus:outline-none focus-visible:ring-2 focus-visible:ring-primary/40 focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-70"
+              >
+                {submitting ? (
+                  <>
+                    <Loader2
+                      className="h-4 w-4 animate-spin"
+                      aria-hidden="true"
+                    />
+                    Sending request...
+                  </>
+                ) : (
+                  <>
+                    <Send className="h-4 w-4" aria-hidden="true" />
+                    Submit Enquiry
+                  </>
+                )}
+              </button>
+            </form>
+          </>
+        )}
+      </div>
+    </div>
+  );
+}
+
+/* ============================================================
+   MAIN HERO
+============================================================ */
+export default function Hero({ onPlanTrip }) {
+  const navigate = useNavigate();
+  const sectionRef = useRef(null);
+  const searchContainerRef = useRef(null);
+
+  const [destination, setDestination] = useState("");
+  const [searching, setSearching] = useState(false);
+  const [searchError, setSearchError] = useState("");
+  const [showSuggestions, setShowSuggestions] = useState(false);
+  const [customPackageModalOpen, setCustomPackageModalOpen] = useState(false);
+  const [customMode, setCustomMode] = useState("unavailable");
+
+  /* ---------------- Cached data (useQuery) ---------------- */
+  const { data: settings, loading: settingsLoading } =
+    useQuery(getSiteSettings);
+  const { data: packageResponse, loading: packagesLoading } =
+    useQuery(getPackages);
+  const {
+    data: slideData,
+    loading: slidesLoading,
+    refetch: refetchHero,
+  } = useQuery(getHero);
+
+  /*
+   * Keep the latest refetch in a ref so the revalidation effects below
+   * never restart when the hook returns a new function identity.
+   */
+  const refetchRef = useRef(refetchHero);
+  refetchRef.current = refetchHero;
+
+  const [clock, setClock] = useState(() => Date.now());
+
+  useEffect(() => {
+    const clockTimer = setInterval(() => setClock(Date.now()), CLOCK_MS);
+
+    const refresh = () => {
+      if (document.hidden) return;
+      setClock(Date.now());
+      refetchRef.current?.();
+    };
+
+    const refreshTimer = setInterval(refresh, REFRESH_MS);
+    const onVisible = () => {
+      if (!document.hidden) refresh();
+    };
+    const onStorage = (event) => {
+      if (event.key === HERO_UPDATED_KEY) refresh();
+    };
+
+    document.addEventListener("visibilitychange", onVisible);
+    window.addEventListener("storage", onStorage);
+
+    return () => {
+      clearInterval(clockTimer);
+      clearInterval(refreshTimer);
+      document.removeEventListener("visibilitychange", onVisible);
+      window.removeEventListener("storage", onStorage);
+    };
+  }, []);
+
+  /* ---------------- Packages / destinations ---------------- */
+  const publishedPackages = useMemo(() => {
+    const list = Array.isArray(packageResponse)
+      ? packageResponse
+      : Array.isArray(packageResponse?.items)
+        ? packageResponse.items
+        : [];
+    return list.filter(isPublishedPackage);
+  }, [packageResponse]);
+
+  const packageById = useMemo(
+    () => new Map(publishedPackages.map((pkg) => [Number(pkg.id), pkg])),
+    [publishedPackages],
+  );
+
+  const destinationOptions = useMemo(() => {
+    const unique = new Map();
+    publishedPackages.forEach((pkg) => {
+      const name = String(pkg?.destination || "").trim();
+      const key = normalizeDestination(name);
+      if (!key) return;
+      if (!unique.has(key)) unique.set(key, { name, count: 0 });
+      unique.get(key).count += 1;
+    });
+    return [...unique.values()].sort((a, b) => a.name.localeCompare(b.name));
+  }, [publishedPackages]);
+
+  /* Packages shown in the search dropdown (matches title or destination). */
+  const filteredPackageOptions = useMemo(() => {
+    const term = normalizeDestination(destination);
+
+    const list = term
+      ? publishedPackages.filter((pkg) =>
+          normalizeDestination(
+            `${getPackageTitle(pkg)} ${pkg?.destination || ""}`,
+          ).includes(term),
+        )
+      : publishedPackages;
+
+    return list.slice(0, 8);
+  }, [destination, publishedPackages]);
+
+  /* ---------------- Slides ---------------- */
+  const slides = useMemo(() => {
+    const live = normalizeSlides(slideData, clock);
+    return live.length > 0 ? live : [buildFallbackSlide(settings)];
+  }, [slideData, settings, clock]);
+
+  const count = slides.length;
+  const isCarousel = count > 1;
+
+  // Only show the loading skeleton before the first data arrives, so a
+  // background revalidation never flashes the copy.
+  const initialSlidesLoading = slidesLoading && slideData == null;
+  const copyLoading = initialSlidesLoading || (settingsLoading && !isCarousel);
+
+  const reducedMotion = usePrefersReducedMotion();
+
+  /*
+   * The active slide is tracked by id. When an admin removes or
+   * deactivates a slide, playback continues from the nearest remaining
+   * slide without a jump.
+   */
+  const [activeId, setActiveId] = useState(null);
+  const [leavingId, setLeavingId] = useState(null);
+  const lastIndexRef = useRef(0);
+
+  const foundIndex = slides.findIndex((slide) => slide.id === activeId);
+  const current =
+    foundIndex >= 0 ? foundIndex : Math.min(lastIndexRef.current, count - 1);
+  const currentId = slides[current]?.id ?? null;
+
+  const [userPaused, setUserPaused] = useState(false);
+  const [hoverPaused, setHoverPaused] = useState(false);
+  const [focusPaused, setFocusPaused] = useState(false);
+  const [pageHidden, setPageHidden] = useState(false);
+  const [offscreen, setOffscreen] = useState(false);
+  const [touchPaused, setTouchPaused] = useState(false);
+
+  const canAutoplay = isCarousel && !reducedMotion;
+  const isPaused =
+    !canAutoplay ||
+    userPaused ||
+    hoverPaused ||
+    focusPaused ||
+    pageHidden ||
+    offscreen ||
+    touchPaused;
+
+  const barRefs = useRef([]);
+  const elapsedRef = useRef(0);
+  const previousIdRef = useRef(currentId);
+  const swipeRef = useRef(null);
+  const slidesRef = useRef(slides);
+  slidesRef.current = slides;
+
+  useEffect(() => {
+    lastIndexRef.current = current;
+    if (currentId !== null && currentId !== activeId) setActiveId(currentId);
+  }, [current, currentId, activeId]);
+
+  const goTo = useCallback((index) => {
+    const list = slidesRef.current;
+    if (list.length === 0) return;
+    const next = ((index % list.length) + list.length) % list.length;
+    setActiveId(list[next].id);
+  }, []);
+
+  const goPrev = () => goTo(current - 1);
+  const goNext = () => goTo(current + 1);
+  const selectSlide = (index) => goTo(index);
+
+  // Keep the outgoing slide visible while the new one fades in.
+  useEffect(() => {
+    const previousId = previousIdRef.current;
+    if (previousId === currentId) return undefined;
+    previousIdRef.current = currentId;
+
+    if (!slidesRef.current.some((slide) => slide.id === previousId)) {
+      return undefined;
+    }
+
+    setLeavingId(previousId);
+    const timer = setTimeout(() => setLeavingId(null), FADE_MS + 100);
+    return () => clearTimeout(timer);
+  }, [currentId]);
+
+  // Restart the progress timer whenever the slide set or slide changes.
+  useLayoutEffect(() => {
+    elapsedRef.current = 0;
+    barRefs.current.forEach((bar, index) => {
+      if (!bar) return;
+      const filled = !canAutoplay && index === current;
+      bar.style.transform = filled ? "scaleX(1)" : "scaleX(0)";
+    });
+  }, [currentId, count, canAutoplay, current]);
+
+  // Auto-advance with progress bar.
+  useEffect(() => {
+    if (isPaused) return undefined;
+
+    let frame = 0;
+    let last = performance.now();
+
+    const tick = (now) => {
+      elapsedRef.current += now - last;
+      last = now;
+
+      const progress = Math.min(elapsedRef.current / AUTOPLAY_MS, 1);
+      const bar = barRefs.current[current];
+      if (bar) bar.style.transform = `scaleX(${progress})`;
+
+      if (progress >= 1) {
+        goTo(current + 1);
+        return;
+      }
+      frame = requestAnimationFrame(tick);
+    };
+
+    frame = requestAnimationFrame(tick);
+    return () => cancelAnimationFrame(frame);
+  }, [isPaused, current, currentId, count, goTo]);
+
+  useEffect(() => {
+    const onVisibility = () => setPageHidden(document.hidden);
+    onVisibility();
+    document.addEventListener("visibilitychange", onVisibility);
+    return () => document.removeEventListener("visibilitychange", onVisibility);
+  }, []);
+
+  useEffect(() => {
+    const element = sectionRef.current;
+    if (!element || typeof IntersectionObserver === "undefined") {
+      return undefined;
+    }
+    const observer = new IntersectionObserver(
+      ([entry]) => setOffscreen(!entry.isIntersecting),
+      { threshold: 0.2 },
+    );
+    observer.observe(element);
+    return () => observer.disconnect();
+  }, []);
+
+  /* Pause while the pointer is over the arrows or pager (not the copy, so
+     resting the mouse on the headline never freezes the slideshow). */
+  const hoverPauseProps = {
+    onPointerEnter: (event) => {
+      if (event.pointerType !== "touch") setHoverPaused(true);
+    },
+    onPointerLeave: (event) => {
+      if (event.pointerType !== "touch") setHoverPaused(false);
+    },
+  };
+
+  const handlePagerKeyDown = (event) => {
+    if (event.key === "ArrowRight") {
+      event.preventDefault();
+      goNext();
+    } else if (event.key === "ArrowLeft") {
+      event.preventDefault();
+      goPrev();
+    }
+  };
+
+  const handleFocus = (event) => {
+    let visible = true;
+    try {
+      visible = event.target.matches(":focus-visible");
+    } catch {
+      visible = true;
+    }
+    if (visible) setFocusPaused(true);
+  };
+
+  const handleBlur = (event) => {
+    if (!event.currentTarget.contains(event.relatedTarget)) {
+      setFocusPaused(false);
+    }
+  };
+
+  const handleTouchStart = (event) => {
+    const touch = event.touches[0];
+    swipeRef.current = { x: touch.clientX, y: touch.clientY };
+    setTouchPaused(true); // never change a slide under the user's thumb
+  };
+
+  const handleTouchEnd = (event) => {
+    setTouchPaused(false);
+    const start = swipeRef.current;
+    swipeRef.current = null;
+    if (!start || !isCarousel) return;
+
+    const touch = event.changedTouches[0];
+    const dx = touch.clientX - start.x;
+    const dy = touch.clientY - start.y;
+
+    if (Math.abs(dx) > 50 && Math.abs(dx) > Math.abs(dy) * 1.5) {
+      if (dx < 0) goNext();
+      else goPrev();
+    }
+  };
+
+  const handleTouchCancel = () => {
+    swipeRef.current = null;
+    setTouchPaused(false);
+  };
+
+  /* The chip row scrolls sideways itself, so it must not change slides. */
+  const stopSwipe = {
+    onTouchStart: (e) => e.stopPropagation(),
+    onTouchEnd: (e) => e.stopPropagation(),
+  };
+
+  /* ==========================================================
+     SEARCH
+  ========================================================== */
+  useEffect(() => {
+    const handleOutsideClick = (event) => {
+      if (
+        searchContainerRef.current &&
+        !searchContainerRef.current.contains(event.target)
+      ) {
+        setShowSuggestions(false);
+      }
+    };
+
+    document.addEventListener("mousedown", handleOutsideClick);
+    return () => document.removeEventListener("mousedown", handleOutsideClick);
+  }, []);
+
+  /* Picking a package from the dropdown opens it directly. */
+  const handlePackageSelect = (pkg) => {
+    if (!pkg) return;
+    setShowSuggestions(false);
+    setSearchError("");
+    navigate(getPackageUrl(pkg, pkg?.id));
+  };
+
+  const openCustomPackageRequest = () => {
+    setShowSuggestions(false);
+    setSearchError("");
+    setCustomMode("unavailable");
+    setCustomPackageModalOpen(true);
+  };
+
+  /* Uses the parent's handler when given, else opens the enquiry form. */
+  const handlePlanTrip = () => {
+    if (onPlanTrip) {
+      onPlanTrip();
+      return;
+    }
+    setShowSuggestions(false);
+    setSearchError("");
+    setCustomMode("plan");
+    setCustomPackageModalOpen(true);
+  };
+
+  const handleSearch = (event) => {
+    event.preventDefault();
+    const search = destination.trim();
+
+    if (!search) {
+      setSearchError("");
+      setShowSuggestions(false);
+      navigate("/packages");
+      return;
+    }
+
+    setSearching(true);
+    setSearchError("");
+    setShowSuggestions(false);
+
+    const normalizedSearch = normalizeDestination(search);
+
+    // Exact package title: open that package.
+    const packageMatch = publishedPackages.find(
+      (pkg) => normalizeDestination(getPackageTitle(pkg)) === normalizedSearch,
+    );
+
+    if (packageMatch) {
+      navigate(getPackageUrl(packageMatch, packageMatch.id));
+      setSearching(false);
+      return;
+    }
+
+    const match =
+      destinationOptions.find(
+        (item) => normalizeDestination(item.name) === normalizedSearch,
+      ) ||
+      destinationOptions.find((item) => {
+        const normalized = normalizeDestination(item.name);
+        return (
+          normalized.includes(normalizedSearch) ||
+          normalizedSearch.includes(normalized)
+        );
+      });
+
+    if (match) {
+      navigate(`/packages?destination=${encodeURIComponent(match.name)}`);
+    } else {
+      setSearchError(`We don't currently have a package for "${search}".`);
+    }
+
+    setSearching(false);
+  };
+
+  const handleInputChange = (event) => {
+    setDestination(event.target.value);
+    setSearchError("");
+    setShowSuggestions(true);
+  };
+
+  return (
+    <>
+      <ToastContainer
+        position="top-right"
+        autoClose={3500}
+        newestOnTop
+        closeOnClick
+        pauseOnFocusLoss
+        draggable
+        pauseOnHover
+        theme="light"
+      />
+
+      <section
+        ref={sectionRef}
+        className="relative isolate flex min-h-[640px] flex-col overflow-hidden bg-ink px-5 pb-10 pt-12 sm:px-20 sm:py-16 lg:min-h-[740px] lg:px-24 lg:py-20"
+        aria-roledescription={isCarousel ? "carousel" : undefined}
+        aria-label={
+          isCarousel ? `${BRAND_NAME} featured holidays and offers` : undefined
+        }
+        onFocus={handleFocus}
+        onBlur={handleBlur}
+        onTouchStart={handleTouchStart}
+        onTouchEnd={handleTouchEnd}
+        onTouchCancel={handleTouchCancel}
+      >
+        {/* Slide images + each slide's own overlay (set in HeroManage) */}
+        <SlideBackgrounds
+          slides={slides}
+          currentId={currentId}
+          leavingId={leavingId}
+          reducedMotion={reducedMotion}
+        />
+
+        {/* Light bottom shade so the search area stays readable even when
+            a slide's overlay is set to "None". */}
+        <div
+          className="pointer-events-none absolute inset-x-0 bottom-0 -z-10 h-1/2 bg-gradient-to-t from-[#1F0A15]/75 via-[#1F0A15]/25 to-transparent"
+          aria-hidden="true"
+        />
+
+        <div
+          className="pointer-events-none absolute inset-0 -z-10 bg-[radial-gradient(ellipse_at_30%_20%,rgba(200,19,94,0.14)_0%,transparent_60%)]"
+          aria-hidden="true"
+        />
+
+        {/* Side arrows (>= sm), kept inside max-w-6xl so they stay close to
+            the content on wide screens instead of hugging the window edge. */}
+        {isCarousel && (
+          <div className="pointer-events-none absolute inset-0 z-20 mx-auto hidden w-full max-w-6xl sm:block">
+            <button
+              type="button"
+              onClick={goPrev}
+              className={`${ICON_BUTTON} pointer-events-auto absolute left-4 top-1/2 -translate-y-1/2 lg:left-8`}
+              aria-label="Previous slide"
+              {...hoverPauseProps}
+            >
+              <ChevronLeft className="h-5 w-5" aria-hidden="true" />
+            </button>
+
+            <button
+              type="button"
+              onClick={goNext}
+              className={`${ICON_BUTTON} pointer-events-auto absolute right-4 top-1/2 -translate-y-1/2 lg:right-8`}
+              aria-label="Next slide"
+              {...hoverPauseProps}
+            >
+              <ChevronRight className="h-5 w-5" aria-hidden="true" />
+            </button>
+          </div>
+        )}
+
+        <div className="relative z-10 mx-auto flex w-full max-w-6xl flex-1 flex-col">
+          {/* ---------- Slide copy region: text is placed per slide ---------- */}
+          {copyLoading ? (
+            <div
+              className="flex min-h-[20rem] flex-1 flex-col items-start justify-center space-y-3 sm:items-center lg:min-h-[24rem]"
+              role="status"
+              aria-label={`Loading ${BRAND_NAME} hero content`}
+            >
+              <Skeleton className="mb-3 h-8 w-60 rounded-full" />
+              <Skeleton className="h-10 w-[88%] max-w-3xl sm:h-12 md:h-14" />
+              <Skeleton className="h-10 w-[65%] max-w-2xl sm:h-12 md:h-14" />
+              <Skeleton className="mt-4 h-5 w-full max-w-xl" />
+              <Skeleton className="h-5 w-3/4 max-w-lg" />
+            </div>
+          ) : (
+            <div
+              className="grid min-h-[20rem] flex-1 lg:min-h-[24rem]"
+              aria-live={isPaused ? "polite" : "off"}
+            >
+              {slides.map((slide, index) => (
+                <SlideCopy
+                  key={slide.id}
+                  slide={slide}
+                  index={index}
+                  count={count}
+                  isActive={slide.id === currentId}
+                  reducedMotion={reducedMotion}
+                  packageById={packageById}
+                  packagesLoading={packagesLoading}
+                />
+              ))}
+            </div>
+          )}
+
+          {/* ---------- Centred block: pager, search, chips, plan, highlights ---------- */}
+          <div className="mx-auto mt-6 w-full max-w-3xl sm:mt-8">
+            {/* Pager */}
+            {isCarousel && !copyLoading && (
+              <div className="min-w-0" {...hoverPauseProps}>
+                <SlidePager
+                  slides={slides}
+                  current={current}
+                  barRefs={barRefs}
+                  onSelect={selectSlide}
+                  onKeyDown={handlePagerKeyDown}
+                  canAutoplay={canAutoplay}
+                  userPaused={userPaused}
+                  onTogglePause={() => setUserPaused((value) => !value)}
+                />
+              </div>
+            )}
+
+            {/* Search (z-30 keeps the dropdown above the chips) */}
+            <div
+              ref={searchContainerRef}
+              className="relative z-30 mt-3 w-full text-left sm:mt-4"
+            >
+              <form
+                onSubmit={handleSearch}
+                className="relative flex w-full flex-col overflow-visible rounded-3xl bg-white/95 text-text-dark shadow-2xl ring-1 ring-champagne/50 backdrop-blur sm:flex-row sm:rounded-full"
+              >
+                <div className="flex min-w-0 flex-1 items-center gap-3 px-4 py-3 sm:px-5 sm:py-3.5">
+                  <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-primary-lighter text-primary">
+                    <MapPin className="h-5 w-5" aria-hidden="true" />
+                  </span>
+                  <div className="min-w-0 flex-1">
+                    <label
+                      htmlFor="destination-search"
+                      className="mb-0.5 block text-xs font-medium text-muted"
+                    >
+                      Your next escape
+                    </label>
+                    <input
+                      id="destination-search"
+                      type="text"
+                      value={destination}
+                      onChange={handleInputChange}
+                      onFocus={() => setShowSuggestions(true)}
+                      placeholder="Search a destination or package"
+                      autoComplete="off"
+                      enterKeyHint="search"
+                      className="w-full min-w-0 bg-transparent text-base font-medium text-text-dark outline-none placeholder:text-placeholder"
+                    />
+                  </div>
+                </div>
+
+                <div className="p-2 pt-0 sm:p-2 sm:pl-0">
+                  <button
+                    type="submit"
+                    disabled={searching}
+                    className="flex h-12 w-full shrink-0 items-center justify-center gap-2 rounded-full bg-accent px-6 text-sm font-semibold text-white shadow-brand transition-colors duration-200 hover:bg-accent-hover focus:outline-none focus-visible:ring-2 focus-visible:ring-primary/50 focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-70 sm:w-auto sm:px-8"
+                  >
+                    {searching ? (
+                      <Loader2
+                        className="h-4 w-4 animate-spin"
+                        aria-hidden="true"
+                      />
+                    ) : (
+                      <Search className="h-4 w-4" aria-hidden="true" />
+                    )}
+                    {searching ? "Searching..." : "Explore Packages"}
+                  </button>
+                </div>
+
+                {/* Package suggestions: click to open that package */}
+                {showSuggestions &&
+                  !packagesLoading &&
+                  filteredPackageOptions.length > 0 && (
+                    <div className="absolute left-0 right-0 top-full z-50 mt-2 overflow-hidden rounded-2xl border border-border bg-card shadow-travel-hover">
+                      <div className="border-b border-border px-4 py-3">
+                        <p className="text-xs font-semibold text-muted">
+                          Explore Journeys
+                        </p>
+                      </div>
+
+                      <div className="max-h-64 overflow-y-auto p-2">
+                        {filteredPackageOptions.map((pkg) => (
+                          <button
+                            key={pkg.id}
+                            type="button"
+                            onClick={() => handlePackageSelect(pkg)}
+                            className="group flex w-full items-center gap-3 rounded-xl px-3 py-3 text-left transition hover:bg-surface-soft focus:outline-none focus-visible:ring-2 focus-visible:ring-primary/40"
+                          >
+                            <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-primary-lighter text-primary">
+                              <MapPin className="h-4 w-4" aria-hidden="true" />
+                            </span>
+
+                            <span className="min-w-0 flex-1">
+                              <span className="block truncate text-sm font-semibold text-text-dark group-hover:text-primary">
+                                {getPackageTitle(pkg) || "Package"}
+                              </span>
+                              <span className="mt-0.5 block truncate text-xs text-muted">
+                                {[
+                                  pkg?.destination,
+                                  pkg?.duration_days
+                                    ? `${pkg.duration_days} ${
+                                        Number(pkg.duration_days) === 1
+                                          ? "day"
+                                          : "days"
+                                      }`
+                                    : "",
+                                ]
+                                  .filter(Boolean)
+                                  .join(" · ")}
+                              </span>
+                            </span>
+
+                            <ChevronRight
+                              className="h-4 w-4 shrink-0 text-ink-300 transition group-hover:translate-x-1 group-hover:text-primary"
+                              aria-hidden="true"
+                            />
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+
+                {showSuggestions &&
+                  !packagesLoading &&
+                  destination.trim() &&
+                  filteredPackageOptions.length === 0 && (
+                    <div className="absolute left-0 right-0 top-full z-50 mt-2 rounded-2xl border border-border bg-card p-4 shadow-travel-hover">
+                      <div className="flex gap-3">
+                        <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-primary-lighter text-primary">
+                          <MapPin className="h-4 w-4" aria-hidden="true" />
+                        </span>
+
+                        <div>
+                          <p className="text-sm font-semibold text-text-dark">
+                            No package found for "{destination}"
+                          </p>
+                          <p className="mt-1 text-xs leading-relaxed text-muted">
+                            You can still request a customized package for this
+                            destination.
+                          </p>
+                          <button
+                            type="button"
+                            onClick={openCustomPackageRequest}
+                            className="mt-3 inline-flex h-10 items-center gap-2 rounded-lg bg-accent px-3.5 text-xs font-semibold text-white transition hover:bg-accent-hover focus:outline-none focus-visible:ring-2 focus-visible:ring-primary/40"
+                          >
+                            <MessageCircle
+                              className="h-3.5 w-3.5"
+                              aria-hidden="true"
+                            />
+                            Request custom package
+                          </button>
+                        </div>
+                      </div>
+                    </div>
+                  )}
+              </form>
+
+              {searchError && (
+                <div
+                  className="mt-3 rounded-2xl border border-white/15 bg-ink/70 px-4 py-3 text-white backdrop-blur-md"
+                  role="alert"
+                >
+                  <div className="flex items-start gap-3">
+                    <div className="mt-0.5 flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-white/15 text-white">
+                      <MapPin className="h-4 w-4" aria-hidden="true" />
+                    </div>
+
+                    <div className="min-w-0 flex-1">
+                      <p className="font-semibold">Destination unavailable</p>
+                      <p className="mt-1 text-xs leading-relaxed text-white/80">
+                        We don't currently have a package for{" "}
+                        <span className="font-semibold text-white">
+                          "{destination.trim()}"
+                        </span>
+                        . We can create a customized package for you.
+                      </p>
+                      <button
+                        type="button"
+                        onClick={openCustomPackageRequest}
+                        className="mt-3 inline-flex h-10 items-center gap-2 rounded-xl bg-accent px-3.5 text-xs font-semibold text-white transition hover:bg-accent-hover focus:outline-none focus-visible:ring-2 focus-visible:ring-white"
+                      >
+                        <MessageCircle
+                          className="h-3.5 w-3.5"
+                          aria-hidden="true"
+                        />
+                        Request a custom package
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              )}
+            </div>
+
+            {/* Browse by trip type (solid chips, swipeable on phones) */}
+            {/* <div
+              className={`-mx-5 mt-5 flex gap-2 overflow-x-auto px-5 pb-1 sm:mx-0 sm:flex-wrap sm:justify-center sm:overflow-visible sm:px-0 ${NO_SCROLLBAR}`}
+              aria-label="Browse by trip type"
+              {...stopSwipe}
+            >
+              {Object.entries(PACKAGE_TYPE_CONFIG).map(([type, config]) => {
+                const Icon = config.icon;
+                return (
+                  <Link
+                    key={type}
+                    to={`/packages?type=${encodeURIComponent(type)}`}
+                    className="inline-flex h-10 shrink-0 items-center gap-2 rounded-full border border-champagne/50 bg-white/90 px-4 text-[13px] font-medium tracking-wide text-text-dark transition-colors hover:border-champagne hover:bg-white focus:outline-none focus-visible:ring-2 focus-visible:ring-white focus-visible:ring-offset-2 focus-visible:ring-offset-ink"
+                  >
+                    <Icon className="h-4 w-4 text-primary" aria-hidden="true" />
+                    {config.short}
+                  </Link>
+                );
+              })}
+            </div> */}
+
+            {/* Plan button */}
+            <div className="mt-6 flex flex-col items-stretch gap-2 sm:items-center">
+                        <button
+            type="button"
+            onClick={handlePlanTrip}
+            className="group inline-flex h-12 w-full items-center justify-center gap-3 rounded-full bg-white px-8 text-sm font-semibold tracking-wide text-rose-dark shadow-brand transition-all duration-300 hover:bg-white/90 focus:outline-none focus-visible:ring-2 focus-visible:ring-white focus-visible:ring-offset-2 focus-visible:ring-offset-ink sm:w-auto sm:min-w-[18rem]"
+          >
+            <Plane
+              className="h-4 w-4 transition-transform duration-300 group-hover:-translate-y-0.5 group-hover:translate-x-0.5"
+              aria-hidden="true"
+            />
+            Tell us your plan
+            <ArrowRight
+              className="h-4 w-4 transition-transform duration-300 group-hover:translate-x-1"
+              aria-hidden="true"
+            />
+          </button>
+              <p className="text-xs text-white/80 sm:text-center">
+                A journey designed around you
+              </p>
+            </div>
+
+            {/* Why book with us */}
+            <ul className="mt-8 grid grid-cols-3 border-t border-champagne/25 pt-6 [@media(max-height:700px)]:hidden">
+              {HIGHLIGHTS.map(({ icon: Icon, label }, index) => (
+                <li
+                  key={label}
+                  className={`flex flex-col items-start gap-2 px-2 first:pl-0 sm:flex-row sm:items-center sm:justify-center sm:gap-2.5 ${
+                    index > 0 ? "sm:border-l sm:border-champagne/25" : ""
+                  }`}
+                >
+                  <Icon
+                    className="h-5 w-5 shrink-0 text-champagne"
+                    aria-hidden="true"
+                  />
+                  <span className="text-[11px] font-medium uppercase leading-snug tracking-[0.14em] text-white/90 sm:text-xs">
+                    {label}
+                  </span>
+                </li>
+              ))}
+            </ul>
+          </div>
+        </div>
+      </section>
+
+      <CustomPackageModal
+        open={customPackageModalOpen}
+        destination={destination}
+        mode={customMode}
+        onClose={() => setCustomPackageModalOpen(false)}
+      />
+    </>
+  );
+}
 
 
 
