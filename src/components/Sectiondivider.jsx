@@ -1,19 +1,4 @@
 
-/* ==========================================================
-   SectionDivider
-   Section backgrounds are chained so each section's BOTTOM
-   colour equals the next section's TOP colour (see the
-   integration guide). These dividers only add *character*
-   to a join - they never create a colour jump.
-
-   variant="line"   -> hairline + small diamond   (About -> Blog)
-   variant="ticket" -> dashed perforation line     (Destinations -> Batches)
-   variant="curve"  -> soft arc into a darker band (FAQ -> Footer)
-
-   line / ticket : pass `color` (the shared colour of both sections)
-   curve         : pass `from` (section above) and `to` (section below)
-========================================================== */
-
 // Same hex values as tailwind.config.js tokens - no new colours.
 export const ATMOSPHERE = {
   white: "#FFFFFF", // background
