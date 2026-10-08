@@ -13,7 +13,7 @@ import { useState } from "react";
 import OfferBanner from "../components/OfferBanner";
 import BatchSection from "../components/BatchSection";
 import ContactSection from "../components/ContactSection";
-import SectionDivider, {ATMOSPHERE as A} from "../components/SectionDivider";
+import SectionDivider, {ATMOSPHERE as A} from "../components/Sectiondivider";
 import SeasonalSection from "../components/SeasonalSection";
 
 const homeJsonLd = [
